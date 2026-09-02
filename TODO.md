@@ -58,12 +58,12 @@
 
 ## Phase 2：宏与 native 组件体验
 
-- [ ] `#[cordis::service]`：ServiceKey、client、dispatcher、ABI hash。
-- [ ] `#[cordis::event]`：EventSpec、codec、dispatch helpers。
-- [ ] `#[cordis::component]` / `#[cordis::inject]`：descriptor 与 typed deps。
+- [~] `#[cordis::service]`：ServiceSpec 与 ABI hash 已完成，待 typed client/dispatcher。
+- [~] `#[cordis::event]`：EventSpec 与 ABI hash 已完成，待 codec/dispatch helpers。
+- [~] `#[cordis::component]` / `#[cordis::inject]`：descriptor、required inject 与 native apply adapter 已完成，待 typed client fields。
 - [ ] method-level inject child Fiber。
-- [ ] config schema 生成与 `trybuild` compile-fail 测试。
-- [ ] facade crate 和 native counter 示例。
+- [~] config schema 生成与 `trybuild` compile-fail 测试（基础 schema 与 apply 签名诊断已完成）。
+- [~] facade crate 和 native counter 示例（facade 已完成）。
 
 ## Phase 3：Wasmtime host 与 guest SDK
 

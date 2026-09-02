@@ -9,6 +9,7 @@ mod error;
 mod event;
 mod fiber;
 mod id;
+mod native;
 mod service;
 mod supervisor;
 
@@ -23,6 +24,10 @@ pub use fiber::{
     TransitionAdvance, TransitionKind,
 };
 pub use id::{EffectId, FiberId, ListenerId, RealmId};
+pub use native::{
+    Component, ComponentContext, ComponentDefinition, ComponentDescriptor, ComponentEffects,
+    DependencySet, EventSpec, NoDependencies, ServiceSpec, config_schema,
+};
 pub use service::{
     CommittedView, DependencyResolution, InjectSpec, ProviderKey, RegistryChange, Requirement,
     ResolvedInject, ServiceId, ServiceKey,

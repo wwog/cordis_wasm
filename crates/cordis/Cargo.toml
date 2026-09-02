@@ -1,6 +1,6 @@
 [package]
-name = "cordis-core"
-description = "Core runtime semantics for Cordis"
+name = "cordis"
+description = "Cordis facade for native and WebAssembly components"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,13 +8,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-futures.workspace = true
+cordis-core = { path = "../cordis-core" }
+cordis-macros = { path = "../cordis-macros" }
 schemars.workspace = true
 serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
+
+[dev-dependencies]
 tokio.workspace = true
-tracing.workspace = true
+trybuild.workspace = true
 
 [lints]
 workspace = true
