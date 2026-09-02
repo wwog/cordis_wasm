@@ -37,6 +37,21 @@ pub enum CordisError {
     #[error("service {service} was not declared by this fiber")]
     UndeclaredDependency { service: ServiceId },
 
+    #[error("service dispatcher identity mismatch: expected {expected}, got {actual}")]
+    ServiceIdentityMismatch {
+        expected: ServiceId,
+        actual: ServiceId,
+    },
+
+    #[error("service {service} has no method with id {method_id:#010x}")]
+    UnknownServiceMethod { service: ServiceId, method_id: u32 },
+
+    #[error("failed to encode service payload: {message}")]
+    ServiceEncodeFailed { message: String },
+
+    #[error("failed to decode service payload: {message}")]
+    ServiceDecodeFailed { message: String },
+
     #[error("runtime supervisor is closed")]
     RuntimeClosed,
 

@@ -1,0 +1,5 @@
+error: service method must return `Result<T, E>`
+ --> tests/ui/service_non_result.rs:3:29
+  |
+3 |     async fn read(&self) -> u64;
+  |                             ^^^

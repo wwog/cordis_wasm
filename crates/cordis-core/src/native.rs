@@ -1,17 +1,140 @@
-use crate::{Context, CordisError, EffectSet, InjectSpec, ServiceId};
+use crate::{Context, CordisError, EffectSet, InjectSpec, ServiceId, ServiceKey};
 use schemars::{JsonSchema, Schema, schema_for};
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
+use std::fmt;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 /// Static identity generated for a service trait.
-pub trait ServiceSpec: Send + Sync + 'static {
-    const NAME: &'static str;
-    const ABI_HASH: [u8; 32];
-
-    fn service_id() -> ServiceId {
-        ServiceId::new(Self::NAME, Self::ABI_HASH)
+pub trait ServiceSpec: ServiceKey {
+    fn service_id() -> ServiceId
+    where
+        Self: Sized,
+    {
+        ServiceId::of::<Self>()
     }
+}
+
+impl<T: ServiceKey> ServiceSpec for T {}
+
+/// Owned future returned by a native or WebAssembly service dispatcher.
+pub type ServiceFuture =
+    Pin<Box<dyn Future<Output = Result<Vec<u8>, CordisError>> + Send + 'static>>;
+
+/// Object-safe transport boundary shared by generated native clients and Wasm routing.
+pub trait ServiceDispatcher: Send + Sync + 'static {
+    fn service_id(&self) -> ServiceId;
+
+    fn dispatch(&self, method_id: u32, payload: Vec<u8>) -> ServiceFuture;
+}
+
+/// Checked, type-erased service transport used internally by generated clients.
+#[derive(Clone)]
+pub struct ServiceClient {
+    service: ServiceId,
+    dispatcher: Arc<dyn ServiceDispatcher>,
+}
+
+impl ServiceClient {
+    /// Creates a client after verifying the dispatcher's service name and ABI hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CordisError::ServiceIdentityMismatch`] when the dispatcher does not implement
+    /// the requested service ABI.
+    pub fn new<S: ServiceSpec>(
+        dispatcher: Arc<dyn ServiceDispatcher>,
+    ) -> Result<Self, CordisError> {
+        let expected = S::service_id();
+        let actual = dispatcher.service_id();
+        if actual != expected {
+            return Err(CordisError::ServiceIdentityMismatch { expected, actual });
+        }
+        Ok(Self {
+            service: expected,
+            dispatcher,
+        })
+    }
+
+    pub fn service_id(&self) -> &ServiceId {
+        &self.service
+    }
+
+    /// Dispatches one already encoded service call.
+    ///
+    /// # Errors
+    ///
+    /// Returns the transport or provider error reported by the dispatcher.
+    pub async fn call(&self, method_id: u32, payload: Vec<u8>) -> Result<Vec<u8>, CordisError> {
+        self.dispatcher.dispatch(method_id, payload).await
+    }
+}
+
+impl fmt::Debug for ServiceClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ServiceClient")
+            .field("service", &self.service)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Separates a service's declared error from failures in the Cordis transport.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServiceCallError<E> {
+    Transport(CordisError),
+    Service(E),
+}
+
+impl<E: fmt::Display> fmt::Display for ServiceCallError<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Transport(error) => write!(formatter, "service transport failed: {error}"),
+            Self::Service(error) => write!(formatter, "service call failed: {error}"),
+        }
+    }
+}
+
+impl<E> std::error::Error for ServiceCallError<E>
+where
+    E: std::error::Error + 'static,
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Transport(error) => Some(error),
+            Self::Service(error) => Some(error),
+        }
+    }
+}
+
+impl<E> From<CordisError> for ServiceCallError<E> {
+    fn from(error: CordisError) -> Self {
+        Self::Transport(error)
+    }
+}
+
+/// Encodes one service payload using the canonical `MessagePack` codec.
+///
+/// # Errors
+///
+/// Returns [`CordisError::ServiceEncodeFailed`] when `value` cannot be serialized.
+pub fn encode_service_payload<T: Serialize>(value: &T) -> Result<Vec<u8>, CordisError> {
+    rmp_serde::to_vec(value).map_err(|error| CordisError::ServiceEncodeFailed {
+        message: error.to_string(),
+    })
+}
+
+/// Decodes one service payload using the canonical `MessagePack` codec.
+///
+/// # Errors
+///
+/// Returns [`CordisError::ServiceDecodeFailed`] when `payload` is malformed or has the wrong
+/// wire type.
+pub fn decode_service_payload<T: DeserializeOwned>(payload: &[u8]) -> Result<T, CordisError> {
+    rmp_serde::from_slice(payload).map_err(|error| CordisError::ServiceDecodeFailed {
+        message: error.to_string(),
+    })
 }
 
 /// Static identity and payload types generated for an event declaration.

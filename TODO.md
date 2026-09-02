@@ -58,12 +58,12 @@
 
 ## Phase 2：宏与 native 组件体验
 
-- [~] `#[cordis::service]`：ServiceSpec 与 ABI hash 已完成，待 typed client/dispatcher。
+- [x] `#[cordis::service]`：规范化 ABI hash、typed client、native fast path 与动态 MessagePack dispatcher。
 - [~] `#[cordis::event]`：EventSpec 与 ABI hash 已完成，待 codec/dispatch helpers。
-- [~] `#[cordis::component]` / `#[cordis::inject]`：descriptor、required inject 与 native apply adapter 已完成，待 typed client fields。
+- [x] `#[cordis::component]` / `#[cordis::inject]`：descriptor、required inject、强类型依赖字段与 native apply adapter。
 - [ ] method-level inject child Fiber。
 - [~] config schema 生成与 `trybuild` compile-fail 测试（基础 schema 与 apply 签名诊断已完成）。
-- [~] facade crate 和 native counter 示例（facade 已完成）。
+- [x] facade crate 和真实调用注入服务的 native counter 示例。
 
 ## Phase 3：Wasmtime host 与 guest SDK
 

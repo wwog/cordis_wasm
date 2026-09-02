@@ -1,0 +1,5 @@
+error: service arguments must be owned so native and Wasm dispatch use the same ABI
+ --> tests/ui/service_borrowed_argument.rs:3:33
+  |
+3 |     async fn send(&self, value: &str) -> Result<(), String>;
+  |                                 ^^^^

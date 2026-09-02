@@ -4,3 +4,4 @@
 
 .DS_Store
 *.stderr
+!crates/cordis/tests/ui/*.stderr

@@ -474,7 +474,7 @@ pub struct Consumer;
 impl Consumer {
     #[cordis::apply]
     async fn start(self, ctx: ComponentContext<Self>, cfg: Config) -> Result<()> {
-        ctx.deps().counter().add(cfg.initial).await?;
+        ctx.deps().counter.add(cfg.initial).await?;
         Ok(())
     }
 
@@ -496,6 +496,18 @@ impl Consumer {
 - 清晰的 `syn::Error`，并用 `trybuild` 固化 compile-fail 文案。
 
 宏不依赖 nightly，不解析跨 crate Rust 源文件；所有跨 crate 信息通过 trait/const/生成 schema 传递。
+
+当前 native service API 已落地为两条语义一致但成本不同的路径：
+
+- `FooClient::from_native(Arc<T>)` 使用宏生成的 object-safe typed adapter，native-to-native 调用不做序列化；
+- `FooClient::new(Arc<dyn ServiceDispatcher>)` 校验完整 `ServiceId` 后，通过 MessagePack payload 调动态 dispatcher，供后续 Wasmtime 路由直接复用；
+- `FooDispatcher<T>` 将 native provider 暴露成动态 dispatcher，测试和 WASM host 不需要手写 method match；
+- client 始终返回 `Result<T, ServiceCallError<E>>`，明确区分业务错误 `E` 与 codec、ABI、路由等 transport 错误；
+- service 方法只接受 owned 参数并返回 `Result<T, E>`。宏把声明的 `async fn` 改写为带 `Send` 约束的 RPITIT，避免不保证 `Send` 的 async trait future 进入 Fiber；
+- method id 与 service ABI hash 只由 service 名、方法名、参数类型顺序和返回类型构成，方法声明顺序、注释、可见性和参数改名不会改变线协议；
+- `#[cordis::inject(Foo)]` 生成 `FooClient` 类型的依赖字段和唯一构造函数，组件不能从依赖集合访问未声明服务。
+
+当前 MessagePack 使用位置参数 tuple，字段名不参与 ABI；这既保持编码最小，也与 owned 参数和规范化 method id 一致。native fast path 与 dynamic path 已由同一集成测试验证，`native_counter` 示例执行真实注入调用。
 
 ### 9.3 definition-site / use-site 语义
 

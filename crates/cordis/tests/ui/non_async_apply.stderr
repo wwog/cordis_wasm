@@ -1,0 +1,5 @@
+error: #[cordis::apply] method must be async
+ --> tests/ui/non_async_apply.rs:7:8
+  |
+7 |     fn start(
+  |        ^^^^^

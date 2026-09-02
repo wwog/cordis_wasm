@@ -1,0 +1,5 @@
+error: component_impl requires one #[cordis::apply] method
+ --> tests/ui/missing_apply.rs:5:6
+  |
+5 | impl MissingApply {
+  |      ^^^^^^^^^^^^
