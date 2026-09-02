@@ -46,15 +46,15 @@
 - [x] 实现 provide/withdraw 精确通知和 provider 唯一性。
 - [x] 实现纯 Fiber 状态机、desired epoch、generation 与 inertial load/unload。
 - [x] 把 Fiber 状态机接入 Supervisor；actor 只返回 transition work，外部执行后回报 generation。
-- [~] 实现 consumer-first teardown、失败恢复、restart/update（递归 consumer drain 屏障已完成）。
-- [ ] 实现依赖 SCC 诊断。
+- [x] 实现 consumer-first teardown、失败恢复、restart/update。
+- [x] 实现依赖 SCC 诊断（自环和多 Fiber 强连通分量，环解除后自动恢复）。
 
 ### Events
 
-- [ ] 实现 effect-owned listener registry 与顺序 ID。
-- [ ] 实现 emit/parallel/serial/bail。
-- [ ] 实现 native waterfall 和 one-shot Next。
-- [ ] 实现 realm filter、global、prepend。
+- [x] 实现 effect-owned listener registry 与顺序 ID。
+- [x] 实现 emit/parallel/serial/bail。
+- [x] 实现 native waterfall 和 one-shot Next。
+- [x] 实现 realm filter、global、prepend。
 
 ## Phase 2：宏与 native 组件体验
 

@@ -6,6 +6,7 @@
 mod context;
 mod effect;
 mod error;
+mod event;
 mod fiber;
 mod id;
 mod service;
@@ -16,6 +17,7 @@ pub use effect::{
     DisposeErrors, DisposeReport, Disposer, EffectGuard, EffectMeta, EffectScope, EffectSet,
 };
 pub use error::CordisError;
+pub use event::{AsyncEvent, BailEvent, EventTarget, ListenerOptions, Next, WaterfallEvent};
 pub use fiber::{
     DesiredEpoch, DesiredState, EpochEntry, FiberMachine, FiberState, FiberTransition,
     TransitionAdvance, TransitionKind,

@@ -46,6 +46,18 @@ pub enum CordisError {
     #[error("fiber {fiber} unload is waiting for active consumers")]
     TransitionBlocked { fiber: FiberId },
 
+    #[error("dependency cycle contains fibers {fibers:?}")]
+    DependencyCycle { fibers: Vec<FiberId> },
+
+    #[error("event listeners failed: {errors:?}")]
+    EventListenersFailed { errors: Vec<Self> },
+
+    #[error("event listener panicked: {message}")]
+    EventListenerPanicked { message: String },
+
+    #[error("waterfall next was already called")]
+    NextAlreadyUsed,
+
     #[error("child effect {effect} failed during disposal")]
     ChildEffectFailed { effect: EffectId, errors: Vec<Self> },
 

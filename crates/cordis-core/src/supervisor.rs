@@ -30,6 +30,7 @@ pub struct FiberSnapshot {
     pub committed: Option<CommittedView>,
     pub state: FiberState,
     pub active_transition: Option<FiberTransition>,
+    pub dependency_error: Option<CordisError>,
     pub failure: Option<CordisError>,
     pub teardown_error: Option<CordisError>,
 }
@@ -66,6 +67,7 @@ struct FiberRecord {
     context: Option<Context>,
     injects: Vec<InjectSpec>,
     machine: FiberMachine,
+    retired: bool,
 }
 
 #[derive(Debug)]
@@ -422,12 +424,14 @@ fn create_fiber(
                 committed: None,
                 state: FiberState::Pending,
                 active_transition: None,
+                dependency_error: None,
                 failure: None,
                 teardown_error: None,
             },
             context: None,
             injects: Vec::new(),
             machine: FiberMachine::new(id),
+            retired: false,
         },
     );
     Ok(id)
@@ -451,23 +455,29 @@ fn configure_dependencies(
     validate_injects(fiber, &injects)?;
     let desired = resolve_dependencies(state, &context, &injects)?;
 
-    let transition = {
+    let was_failed = {
         let record = state
             .fibers
             .get_mut(&fiber)
             .expect("fiber was validated above");
+        let was_failed = record.machine.state() == FiberState::Failed;
         record.context = Some(context);
         record.injects = injects;
         record.snapshot.desired = desired.clone();
-        let was_failed = record.machine.state() == FiberState::Failed;
-        let transition = record.machine.set_desired(desired_state(&desired));
-        if was_failed {
-            record.machine.restart()
-        } else {
-            transition
-        }
+        was_failed
     };
-    let transitions = schedule_transitions(state, transition);
+    let mut transitions = reconcile_lifecycles(state);
+    if was_failed
+        && let Some(transition) = state
+            .fibers
+            .get_mut(&fiber)
+            .expect("fiber was validated above")
+            .machine
+            .restart()
+    {
+        transitions.push(transition);
+    }
+    let transitions = schedule_transition_batch(state, transitions);
     Ok(DependencyChange {
         resolution: desired,
         transitions,
@@ -502,7 +512,8 @@ fn provide(
         });
     }
     state.providers.insert(key.clone(), provider);
-    let (affected, transitions) = recompute_affected(state, &key);
+    let affected = recompute_affected(state, &key);
+    let transitions = reconcile_lifecycles(state);
     let transitions = schedule_transition_batch(state, transitions);
     Ok(RegistryChange {
         key,
@@ -529,7 +540,8 @@ fn withdraw(
         });
     }
     state.providers.remove(&key);
-    let (affected, transitions) = recompute_affected(state, &key);
+    let affected = recompute_affected(state, &key);
+    let transitions = reconcile_lifecycles(state);
     let transitions = schedule_transition_batch(state, transitions);
     Ok(RegistryChange {
         key,
@@ -588,12 +600,12 @@ fn retire_fiber(
     state: &mut SupervisorState,
     fiber: FiberId,
 ) -> Result<Vec<FiberTransition>, CordisError> {
-    let transition = state
+    let record = state
         .fibers
         .get_mut(&fiber)
-        .ok_or(CordisError::UnknownFiber { fiber })?
-        .machine
-        .set_desired(DesiredState::Retired);
+        .ok_or(CordisError::UnknownFiber { fiber })?;
+    record.retired = true;
+    let transition = record.machine.set_desired(DesiredState::Retired);
     let mut transitions = withdraw_provider_bindings(state, fiber);
     transitions.extend(transition);
     Ok(schedule_transition_batch(state, transitions))
@@ -647,10 +659,7 @@ fn resolve_dependencies(
         .map(DependencyResolution::new)
 }
 
-fn recompute_affected(
-    state: &mut SupervisorState,
-    changed_key: &ProviderKey,
-) -> (Vec<FiberId>, Vec<FiberTransition>) {
+fn recompute_affected(state: &mut SupervisorState, changed_key: &ProviderKey) -> Vec<FiberId> {
     let candidates = state
         .fibers
         .iter()
@@ -668,7 +677,6 @@ fn recompute_affected(
         .collect::<Vec<_>>();
 
     let mut affected = Vec::with_capacity(candidates.len());
-    let mut transitions = Vec::with_capacity(candidates.len());
     for (fiber, context, injects) in candidates {
         let desired = resolve_dependencies(state, &context, &injects)
             .expect("configured context realms remain immutable");
@@ -677,14 +685,124 @@ fn recompute_affected(
             .get_mut(&fiber)
             .expect("candidate fiber came from the same state");
         if record.snapshot.desired != desired {
-            record.snapshot.desired = desired.clone();
-            if let Some(transition) = record.machine.set_desired(desired_state(&desired)) {
-                transitions.push(transition);
-            }
+            record.snapshot.desired = desired;
             affected.push(fiber);
         }
     }
-    (affected, transitions)
+    affected
+}
+
+fn reconcile_lifecycles(state: &mut SupervisorState) -> Vec<FiberTransition> {
+    let cycles = dependency_cycles(state);
+    let fibers = state.fibers.keys().copied().collect::<Vec<_>>();
+    let mut transitions = Vec::new();
+    for fiber in fibers {
+        let record = state
+            .fibers
+            .get_mut(&fiber)
+            .expect("fiber id came from the same state");
+        let desired = if record.retired {
+            record.snapshot.dependency_error = None;
+            DesiredState::Retired
+        } else if record.context.is_none() {
+            record.snapshot.dependency_error = None;
+            DesiredState::Waiting
+        } else if let Some(cycle) = cycles.get(&fiber) {
+            record.snapshot.dependency_error = Some(CordisError::DependencyCycle {
+                fibers: cycle.clone(),
+            });
+            DesiredState::Waiting
+        } else {
+            record.snapshot.dependency_error = None;
+            desired_state(&record.snapshot.desired)
+        };
+        if let Some(transition) = record.machine.set_desired(desired) {
+            transitions.push(transition);
+        }
+    }
+    transitions
+}
+
+fn dependency_cycles(state: &SupervisorState) -> BTreeMap<FiberId, Vec<FiberId>> {
+    fn visit(
+        fiber: FiberId,
+        graph: &BTreeMap<FiberId, Vec<FiberId>>,
+        visited: &mut BTreeSet<FiberId>,
+        finished: &mut Vec<FiberId>,
+    ) {
+        if !visited.insert(fiber) {
+            return;
+        }
+        for provider in &graph[&fiber] {
+            visit(*provider, graph, visited, finished);
+        }
+        finished.push(fiber);
+    }
+
+    fn collect(
+        fiber: FiberId,
+        graph: &BTreeMap<FiberId, Vec<FiberId>>,
+        visited: &mut BTreeSet<FiberId>,
+        component: &mut Vec<FiberId>,
+    ) {
+        if !visited.insert(fiber) {
+            return;
+        }
+        component.push(fiber);
+        for consumer in &graph[&fiber] {
+            collect(*consumer, graph, visited, component);
+        }
+    }
+
+    let graph = state
+        .fibers
+        .iter()
+        .map(|(fiber, record)| {
+            let providers = record.context.as_ref().map_or_else(Vec::new, |_| {
+                record
+                    .snapshot
+                    .desired
+                    .entries()
+                    .iter()
+                    .filter_map(|entry| entry.provider)
+                    .collect::<Vec<_>>()
+            });
+            (*fiber, providers)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reverse = graph
+        .keys()
+        .map(|fiber| (*fiber, Vec::new()))
+        .collect::<BTreeMap<_, _>>();
+    for (consumer, providers) in &graph {
+        for provider in providers {
+            reverse
+                .get_mut(provider)
+                .expect("all providers are runtime fibers")
+                .push(*consumer);
+        }
+    }
+
+    let mut visited = BTreeSet::new();
+    let mut finished = Vec::with_capacity(graph.len());
+    for fiber in graph.keys() {
+        visit(*fiber, &graph, &mut visited, &mut finished);
+    }
+
+    visited.clear();
+    let mut cycles = BTreeMap::new();
+    for fiber in finished.into_iter().rev() {
+        let mut component = Vec::new();
+        collect(fiber, &reverse, &mut visited, &mut component);
+        component.sort_unstable();
+        let cyclic = component.len() > 1 || graph[&fiber].contains(&fiber);
+        if cyclic {
+            for member in &component {
+                cycles.insert(*member, component.clone());
+            }
+        }
+    }
+    cycles
 }
 
 fn schedule_transitions(
@@ -723,12 +841,11 @@ fn withdraw_provider_bindings(
         .iter()
         .filter_map(|(key, owner)| (*owner == provider).then_some(key.clone()))
         .collect::<Vec<_>>();
-    let mut transitions = Vec::new();
     for key in keys {
         state.providers.remove(&key);
-        transitions.extend(recompute_affected(state, &key).1);
+        recompute_affected(state, &key);
     }
-    transitions
+    reconcile_lifecycles(state)
 }
 
 fn release_ready_unloads(state: &mut SupervisorState) -> Vec<FiberTransition> {
@@ -989,6 +1106,90 @@ mod tests {
             })
         );
         runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dependency_cycle_stays_pending_and_recovers_when_broken() {
+        let runtime = Runtime::start();
+        let handle = runtime.handle();
+        let fiber = handle.create_fiber(None).await.unwrap();
+        let recursive = service("recursive");
+        let realm = handle.allocate_realm().await.unwrap();
+        let key = ProviderKey::new(recursive.clone(), realm);
+        handle.provide(key.clone(), fiber).await.unwrap();
+
+        let change = handle
+            .configure_dependencies(
+                fiber,
+                Context::root(fiber).isolate(recursive.clone(), realm),
+                vec![InjectSpec::required(recursive)],
+            )
+            .await
+            .unwrap();
+        assert!(change.transitions.is_empty());
+        let snapshot = handle.snapshot().await.unwrap();
+        assert_eq!(snapshot.fibers[0].state, FiberState::Pending);
+        assert_eq!(
+            snapshot.fibers[0].dependency_error,
+            Some(CordisError::DependencyCycle {
+                fibers: vec![fiber],
+            })
+        );
+
+        let change = handle.withdraw(key, fiber).await.unwrap();
+        assert!(change.transitions.is_empty());
+        let snapshot = runtime.shutdown().await.unwrap();
+        assert_eq!(snapshot.fibers[0].state, FiberState::Pending);
+        assert!(snapshot.fibers[0].dependency_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn dependency_cycle_reports_every_scc_member() {
+        let runtime = Runtime::start();
+        let handle = runtime.handle();
+        let first = handle.create_fiber(None).await.unwrap();
+        let second = handle.create_fiber(None).await.unwrap();
+        let first_service = service("first");
+        let second_service = service("second");
+        let first_realm = handle.allocate_realm().await.unwrap();
+        let second_realm = handle.allocate_realm().await.unwrap();
+        handle
+            .provide(ProviderKey::new(first_service.clone(), first_realm), first)
+            .await
+            .unwrap();
+        handle
+            .provide(
+                ProviderKey::new(second_service.clone(), second_realm),
+                second,
+            )
+            .await
+            .unwrap();
+
+        handle
+            .configure_dependencies(
+                first,
+                Context::root(first).isolate(second_service.clone(), second_realm),
+                vec![InjectSpec::required(second_service)],
+            )
+            .await
+            .unwrap();
+        let change = handle
+            .configure_dependencies(
+                second,
+                Context::root(second).isolate(first_service.clone(), first_realm),
+                vec![InjectSpec::required(first_service)],
+            )
+            .await
+            .unwrap();
+        assert!(change.transitions.is_empty());
+
+        let expected = Some(CordisError::DependencyCycle {
+            fibers: vec![first, second],
+        });
+        let snapshot = runtime.shutdown().await.unwrap();
+        assert_eq!(snapshot.fibers[0].dependency_error, expected.clone());
+        assert_eq!(snapshot.fibers[1].dependency_error, expected);
+        assert_eq!(snapshot.fibers[1].state, FiberState::Pending);
     }
 
     #[tokio::test]

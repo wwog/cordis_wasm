@@ -27,6 +27,7 @@ define_id!(RealmId);
 
 static NEXT_EFFECT_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_FIBER_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_LISTENER_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_REALM_ID: AtomicU64 = AtomicU64::new(1);
 
 fn next_id(counter: &AtomicU64, kind: &str) -> u64 {
@@ -44,6 +45,12 @@ impl EffectId {
 impl FiberId {
     pub(crate) fn next() -> Self {
         Self(next_id(&NEXT_FIBER_ID, "FiberId"))
+    }
+}
+
+impl ListenerId {
+    pub(crate) fn next() -> Self {
+        Self(next_id(&NEXT_LISTENER_ID, "ListenerId"))
     }
 }
 
@@ -71,9 +78,13 @@ mod tests {
         let second_fiber = FiberId::next();
         let first_realm = RealmId::next();
         let second_realm = RealmId::next();
+        let first_listener = ListenerId::next();
+        let second_listener = ListenerId::next();
         assert!(first_fiber.get() > 0);
         assert!(second_fiber > first_fiber);
         assert!(first_realm.get() > 0);
         assert!(second_realm > first_realm);
+        assert!(first_listener.get() > 0);
+        assert!(second_listener > first_listener);
     }
 }
