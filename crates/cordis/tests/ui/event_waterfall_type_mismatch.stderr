@@ -1,0 +1,5 @@
+error: waterfall event requires identical `Input` and `Output` types
+ --> tests/ui/event_waterfall_type_mismatch.rs:4:19
+  |
+4 |     type Output = u64;
+  |                   ^^^

@@ -52,6 +52,12 @@ pub enum CordisError {
     #[error("failed to decode service payload: {message}")]
     ServiceDecodeFailed { message: String },
 
+    #[error("failed to encode event payload: {message}")]
+    EventEncodeFailed { message: String },
+
+    #[error("failed to decode event payload: {message}")]
+    EventDecodeFailed { message: String },
+
     #[error("runtime supervisor is closed")]
     RuntimeClosed,
 

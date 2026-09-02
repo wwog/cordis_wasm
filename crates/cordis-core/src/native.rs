@@ -137,13 +137,85 @@ pub fn decode_service_payload<T: DeserializeOwned>(payload: &[u8]) -> Result<T, 
     })
 }
 
+/// Stable event identity shared by native and WebAssembly components.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EventId {
+    name: Arc<str>,
+    abi_hash: [u8; 32],
+}
+
+impl EventId {
+    pub fn new(name: impl Into<Arc<str>>, abi_hash: [u8; 32]) -> Self {
+        Self {
+            name: name.into(),
+            abi_hash,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn abi_hash(&self) -> &[u8; 32] {
+        &self.abi_hash
+    }
+}
+
+impl fmt::Display for EventId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}@", self.name)?;
+        for byte in &self.abi_hash[..4] {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Dispatch semantics selected by an event declaration.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EventMode {
+    Emit,
+    Parallel,
+    Serial,
+    Bail,
+    Waterfall,
+}
+
 /// Static identity and payload types generated for an event declaration.
 pub trait EventSpec: Send + Sync + 'static {
-    type Input: Send + 'static;
-    type Output: Send + 'static;
+    type Input: Clone + Serialize + DeserializeOwned + Send + 'static;
+    type Output: Serialize + DeserializeOwned + Send + 'static;
 
     const NAME: &'static str;
     const ABI_HASH: [u8; 32];
+    const MODE: EventMode;
+
+    fn event_id() -> EventId {
+        EventId::new(Self::NAME, Self::ABI_HASH)
+    }
+}
+
+/// Encodes one event payload using the canonical `MessagePack` codec.
+///
+/// # Errors
+///
+/// Returns [`CordisError::EventEncodeFailed`] when `value` cannot be serialized.
+pub fn encode_event_payload<T: Serialize>(value: &T) -> Result<Vec<u8>, CordisError> {
+    rmp_serde::to_vec(value).map_err(|error| CordisError::EventEncodeFailed {
+        message: error.to_string(),
+    })
+}
+
+/// Decodes one event payload using the canonical `MessagePack` codec.
+///
+/// # Errors
+///
+/// Returns [`CordisError::EventDecodeFailed`] when `payload` is malformed or has the wrong wire
+/// type.
+pub fn decode_event_payload<T: DeserializeOwned>(payload: &[u8]) -> Result<T, CordisError> {
+    rmp_serde::from_slice(payload).map_err(|error| CordisError::EventDecodeFailed {
+        message: error.to_string(),
+    })
 }
 
 /// Compile-time dependency declaration for a native component.

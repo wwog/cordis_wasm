@@ -26,8 +26,9 @@ pub use fiber::{
 pub use id::{EffectId, FiberId, ListenerId, RealmId};
 pub use native::{
     Component, ComponentContext, ComponentDefinition, ComponentDescriptor, ComponentEffects,
-    DependencySet, EventSpec, NoDependencies, ServiceCallError, ServiceClient, ServiceDispatcher,
-    ServiceFuture, ServiceSpec, config_schema, decode_service_payload, encode_service_payload,
+    DependencySet, EventId, EventMode, EventSpec, NoDependencies, ServiceCallError, ServiceClient,
+    ServiceDispatcher, ServiceFuture, ServiceSpec, config_schema, decode_event_payload,
+    decode_service_payload, encode_event_payload, encode_service_payload,
 };
 pub use service::{
     CommittedView, DependencyResolution, InjectSpec, ProviderKey, RegistryChange, Requirement,

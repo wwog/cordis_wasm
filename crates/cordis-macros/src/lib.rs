@@ -57,7 +57,18 @@ enum SpecKind {
 
 fn expand_spec(args: TokenStream, input: TokenStream, kind: SpecKind) -> TokenStream {
     let mut item = parse_macro_input!(input as ItemTrait);
-    let name = match named_string(args, "name") {
+    let metas = match parse_metas(args) {
+        Ok(metas) => metas,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let allowed = match kind {
+        SpecKind::Service => &["name"][..],
+        SpecKind::Event => &["name", "mode"][..],
+    };
+    if let Err(error) = validate_metas(&metas, allowed) {
+        return error.into_compile_error().into();
+    }
+    let name = match meta_string(&metas, "name") {
         Ok(Some(name)) => name,
         Ok(None) => item.ident.to_string(),
         Err(error) => return error.into_compile_error().into(),
@@ -68,41 +79,258 @@ fn expand_spec(args: TokenStream, input: TokenStream, kind: SpecKind) -> TokenSt
             Err(error) => error.into_compile_error().into(),
         },
         SpecKind::Event => {
-            let ident = &item.ident;
-            let marker = format_ident!("{ident}Event");
-            let visibility = &item.vis;
-            let tokens = quote!(#item);
-            let hash = hash_tokens(&name, &tokens);
-            let input = associated_type(&item, "Input");
-            let output = associated_type(&item, "Output");
-            for trait_item in &mut item.items {
-                if let syn::TraitItem::Type(ty) = trait_item
-                    && (ty.ident == "Input" || ty.ident == "Output")
-                {
-                    ty.default = None;
-                }
-            }
-            match (input, output) {
-                (Some(input), Some(output)) => quote! {
-                    #item
-
-                    #[derive(Clone, Copy, Debug, Default)]
-                    #visibility struct #marker;
-                    impl ::cordis::EventSpec for #marker {
-                        type Input = #input;
-                        type Output = #output;
-                        const NAME: &'static str = #name;
-                        const ABI_HASH: [u8; 32] = [#(#hash),*];
-                    }
-                },
-                _ => syn::Error::new_spanned(
-                    &item.ident,
-                    "event trait must declare `type Input = ...;` and `type Output = ...;`",
-                )
-                .into_compile_error(),
+            let mode_meta = metas.iter().find(|meta| meta.path().is_ident("mode"));
+            let mode_value = match meta_string(&metas, "mode") {
+                Ok(value) => value,
+                Err(error) => return error.into_compile_error().into(),
+            };
+            let mode = match EventMacroMode::parse(mode_value.as_deref(), mode_meta) {
+                Ok(mode) => mode,
+                Err(error) => return error.into_compile_error().into(),
+            };
+            match expand_event(&mut item, &name, mode) {
+                Ok(expanded) => expanded.into(),
+                Err(error) => error.into_compile_error().into(),
             }
         }
-        .into(),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EventMacroMode {
+    Emit,
+    Parallel,
+    Serial,
+    Bail,
+    Waterfall,
+}
+
+impl EventMacroMode {
+    fn parse(value: Option<&str>, meta: Option<&Meta>) -> syn::Result<Self> {
+        match value.unwrap_or("parallel") {
+            "emit" => Ok(Self::Emit),
+            "parallel" => Ok(Self::Parallel),
+            "serial" => Ok(Self::Serial),
+            "bail" => Ok(Self::Bail),
+            "waterfall" => Ok(Self::Waterfall),
+            value => Err(syn::Error::new_spanned(
+                meta.expect("an invalid mode always came from an attribute value"),
+                format!(
+                    "unknown event mode `{value}`; expected emit, parallel, serial, bail, or waterfall"
+                ),
+            )),
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Emit => "emit",
+            Self::Parallel => "parallel",
+            Self::Serial => "serial",
+            Self::Bail => "bail",
+            Self::Waterfall => "waterfall",
+        }
+    }
+
+    fn core_variant(self) -> proc_macro2::TokenStream {
+        let variant = match self {
+            Self::Emit => format_ident!("Emit"),
+            Self::Parallel => format_ident!("Parallel"),
+            Self::Serial => format_ident!("Serial"),
+            Self::Bail => format_ident!("Bail"),
+            Self::Waterfall => format_ident!("Waterfall"),
+        };
+        quote!(::cordis::EventMode::#variant)
+    }
+}
+
+fn expand_event(
+    item: &mut ItemTrait,
+    name: &str,
+    mode: EventMacroMode,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let (input, output) = event_types(item, mode)?;
+    let ident = &item.ident;
+    let visibility = &item.vis;
+    let marker = format_ident!("{ident}Event");
+    let runtime = format_ident!("{ident}Runtime");
+    let mode_name = mode.name();
+    let hash = hash_text(&format!(
+        "{name}\n{mode_name}\n{}\n{}",
+        quote!(#input),
+        quote!(#output)
+    ));
+    let mode_variant = mode.core_variant();
+    let runtime_type = match mode {
+        EventMacroMode::Emit | EventMacroMode::Parallel | EventMacroMode::Serial => {
+            quote!(::cordis::AsyncEvent<#input, #output>)
+        }
+        EventMacroMode::Bail => quote!(::cordis::BailEvent<#input, #output>),
+        EventMacroMode::Waterfall => quote!(::cordis::WaterfallEvent<#input>),
+    };
+    let dispatch = event_dispatch(mode, visibility, &runtime, &input, &output);
+
+    Ok(quote! {
+        #item
+
+        #[derive(Clone, Copy, Debug, Default)]
+        #visibility struct #marker;
+
+        impl #marker {
+            #visibility const NAME: &'static str = #name;
+            #visibility const ABI_HASH: [u8; 32] = [#(#hash),*];
+            #visibility const MODE: ::cordis::EventMode = #mode_variant;
+
+            #visibility fn runtime() -> #runtime {
+                #runtime::new()
+            }
+
+            #visibility fn encode_input(value: &#input)
+                -> Result<::std::vec::Vec<u8>, ::cordis::CordisError>
+            {
+                ::cordis::encode_event_payload(value)
+            }
+
+            #visibility fn decode_input(payload: &[u8])
+                -> Result<#input, ::cordis::CordisError>
+            {
+                ::cordis::decode_event_payload(payload)
+            }
+
+            #visibility fn encode_output(value: &#output)
+                -> Result<::std::vec::Vec<u8>, ::cordis::CordisError>
+            {
+                ::cordis::encode_event_payload(value)
+            }
+
+            #visibility fn decode_output(payload: &[u8])
+                -> Result<#output, ::cordis::CordisError>
+            {
+                ::cordis::decode_event_payload(payload)
+            }
+
+            #dispatch
+        }
+
+        impl ::cordis::EventSpec for #marker {
+            type Input = #input;
+            type Output = #output;
+            const NAME: &'static str = #name;
+            const ABI_HASH: [u8; 32] = [#(#hash),*];
+            const MODE: ::cordis::EventMode = #mode_variant;
+        }
+
+        #visibility type #runtime = #runtime_type;
+    })
+}
+
+fn event_types(item: &mut ItemTrait, mode: EventMacroMode) -> syn::Result<(Type, Type)> {
+    if !item.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &item.generics,
+            "event traits cannot have generic parameters",
+        ));
+    }
+    for trait_item in &item.items {
+        match trait_item {
+            TraitItem::Type(ty) if ty.ident == "Input" || ty.ident == "Output" => {}
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    trait_item,
+                    "event traits may only declare `Input` and `Output` associated types",
+                ));
+            }
+        }
+    }
+
+    let input = associated_type(item, "Input").ok_or_else(|| {
+        syn::Error::new_spanned(
+            &item.ident,
+            "event trait must declare `type Input = ...;` and `type Output = ...;`",
+        )
+    })?;
+    let output = associated_type(item, "Output").ok_or_else(|| {
+        syn::Error::new_spanned(
+            &item.ident,
+            "event trait must declare `type Input = ...;` and `type Output = ...;`",
+        )
+    })?;
+    if matches!(mode, EventMacroMode::Waterfall)
+        && quote!(#input).to_string() != quote!(#output).to_string()
+    {
+        return Err(syn::Error::new_spanned(
+            &output,
+            "waterfall event requires identical `Input` and `Output` types",
+        ));
+    }
+    for trait_item in &mut item.items {
+        if let TraitItem::Type(ty) = trait_item {
+            ty.default = None;
+        }
+    }
+    Ok((input, output))
+}
+
+fn event_dispatch(
+    mode: EventMacroMode,
+    visibility: &syn::Visibility,
+    runtime: &syn::Ident,
+    input: &Type,
+    output: &Type,
+) -> proc_macro2::TokenStream {
+    match mode {
+        EventMacroMode::Emit => quote! {
+            #visibility fn dispatch<S>(
+                event: &#runtime,
+                target: ::cordis::EventTarget,
+                input: &#input,
+                error_sink: S,
+            ) -> Result<(), ::cordis::CordisError>
+            where
+                S: Fn(::cordis::CordisError) + Send + Sync + 'static,
+            {
+                event.emit_nowait(target, input, error_sink)
+            }
+        },
+        EventMacroMode::Parallel => quote! {
+            #visibility async fn dispatch(
+                event: &#runtime,
+                target: ::cordis::EventTarget,
+                input: &#input,
+            ) -> Result<
+                ::std::vec::Vec<::std::ops::ControlFlow<#output>>,
+                ::cordis::CordisError,
+            > {
+                event.parallel(target, input).await
+            }
+        },
+        EventMacroMode::Serial => quote! {
+            #visibility async fn dispatch(
+                event: &#runtime,
+                target: ::cordis::EventTarget,
+                input: &#input,
+            ) -> Result<Option<#output>, ::cordis::CordisError> {
+                event.serial(target, input).await
+            }
+        },
+        EventMacroMode::Bail => quote! {
+            #visibility fn dispatch(
+                event: &#runtime,
+                target: ::cordis::EventTarget,
+                input: &#input,
+            ) -> Result<Option<#output>, ::cordis::CordisError> {
+                event.bail(target, input)
+            }
+        },
+        EventMacroMode::Waterfall => quote! {
+            #visibility async fn dispatch(
+                event: &#runtime,
+                target: ::cordis::EventTarget,
+                input: #input,
+            ) -> Result<#output, ::cordis::CordisError> {
+                event.run(target, input).await
+            }
+        },
     }
 }
 
@@ -694,10 +922,6 @@ fn associated_type(item: &ItemTrait, name: &str) -> Option<Type> {
     })
 }
 
-fn hash_tokens(name: &str, tokens: &proc_macro2::TokenStream) -> [u8; 32] {
-    hash_text(&format!("{name}\n{tokens}"))
-}
-
 fn hash_text(value: &str) -> [u8; 32] {
     *blake3::hash(value.as_bytes()).as_bytes()
 }
@@ -736,14 +960,36 @@ fn canonical_service_method(
     )
 }
 
-fn named_string(args: TokenStream, key: &str) -> syn::Result<Option<String>> {
-    meta_string(&parse_metas(args)?, key)
-}
-
 fn parse_metas(args: TokenStream) -> syn::Result<Vec<Meta>> {
     Punctuated::<Meta, Token![,]>::parse_terminated
         .parse(args)
         .map(|values| values.into_iter().collect())
+}
+
+fn validate_metas(metas: &[Meta], allowed: &[&str]) -> syn::Result<()> {
+    let mut seen = std::collections::BTreeSet::new();
+    for meta in metas {
+        let Some(identifier) = meta.path().get_ident() else {
+            return Err(syn::Error::new_spanned(
+                meta,
+                "attribute key must be an identifier",
+            ));
+        };
+        let key = identifier.to_string();
+        if !allowed.contains(&key.as_str()) {
+            return Err(syn::Error::new_spanned(
+                meta,
+                format!("unknown attribute key `{key}`"),
+            ));
+        }
+        if !seen.insert(key.clone()) {
+            return Err(syn::Error::new_spanned(
+                meta,
+                format!("attribute key `{key}` was specified more than once"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn meta_string(metas: &[Meta], key: &str) -> syn::Result<Option<String>> {

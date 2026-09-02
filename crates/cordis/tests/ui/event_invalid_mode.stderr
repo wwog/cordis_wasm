@@ -1,0 +1,5 @@
+error: unknown event mode `broadcast`; expected emit, parallel, serial, bail, or waterfall
+ --> tests/ui/event_invalid_mode.rs:1:17
+  |
+1 | #[cordis::event(mode = "broadcast")]
+  |                 ^^^^^^^^^^^^^^^^^^

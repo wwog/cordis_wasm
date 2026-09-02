@@ -59,7 +59,7 @@
 ## Phase 2：宏与 native 组件体验
 
 - [x] `#[cordis::service]`：规范化 ABI hash、typed client、native fast path 与动态 MessagePack dispatcher。
-- [~] `#[cordis::event]`：EventSpec 与 ABI hash 已完成，待 codec/dispatch helpers。
+- [x] `#[cordis::event]`：EventId、稳定 ABI、MessagePack codec 与五种模式 typed dispatch helpers。
 - [x] `#[cordis::component]` / `#[cordis::inject]`：descriptor、required inject、强类型依赖字段与 native apply adapter。
 - [ ] method-level inject child Fiber。
 - [~] config schema 生成与 `trybuild` compile-fail 测试（基础 schema 与 apply 签名诊断已完成）。

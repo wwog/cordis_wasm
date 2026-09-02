@@ -460,7 +460,7 @@ trait ComponentInstance: Send {
 ### 9.2 宏设计
 
 ```rust
-#[cordis::service(name = "app.counter", version = "1")]
+#[cordis::service(name = "app.counter")]
 pub trait Counter {
     async fn add(&self, delta: u64) -> Result<u64, CounterError>;
     async fn get(&self) -> Result<u64, CounterError>;
@@ -532,7 +532,18 @@ pub trait BeforeRun {
 }
 ```
 
-宏生成 EventSpec、codec、schema hash 和 Context 扩展方法。运行时注册表以 `(EventName, AbiHash)` 为 key，以单调 ListenerId 保持注册顺序。
+宏生成 EventSpec、codec、ABI hash 和 typed runtime dispatch helper。后续动态运行时注册表以 `(EventName, AbiHash)` 为 key，以单调 ListenerId 保持注册顺序。
+
+当前宏层已生成 `EventId`、`EventMode`、`FooRuntime`、输入/输出 MessagePack codec 和按 mode 唯一确定的 `FooEvent::dispatch`：
+
+- `emit` 委托给 `AsyncEvent::emit_nowait`，显式接收异步错误 sink；
+- `parallel` 返回保持 listener 顺序的全部 `ControlFlow`；
+- `serial` 与 `bail` 返回首个 break value，其中 bail 保持同步；
+- `waterfall` 委托给 one-shot `Next` onion runtime，并在宏展开时要求 `Input` 与 `Output` 类型完全一致；
+- 未指定 mode 时明确默认为 `parallel`，未知 mode、重复或未知 attribute key 都是编译错误；
+- event ABI hash 由 event 名、mode、输入类型和输出类型构成，不包含 trait 名、注释或可见性。
+
+native 调用直接使用强类型 payload；MessagePack codec 只为后续 WASM callback/envelope 边界准备，不给 native 路径增加序列化成本。
 
 ### 10.2 五种模式
 

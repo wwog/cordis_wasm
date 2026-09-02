@@ -1,9 +1,11 @@
 use cordis::{
     Component, ComponentContext, ComponentDefinition, Context, CordisError, EffectSet, EventSpec,
-    Runtime, ServiceCallError, ServiceDispatcher, ServiceFuture, ServiceId, ServiceSpec,
+    EventTarget, ListenerOptions, Runtime, ServiceCallError, ServiceDispatcher, ServiceFuture,
+    ServiceId, ServiceSpec,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 
 #[cordis::service(name = "app.logger")]
@@ -65,6 +67,34 @@ trait BeforeRun {
     type Output = String;
 }
 
+#[cordis::event(name = "app.announce", mode = "emit")]
+#[allow(dead_code)]
+trait Announce {
+    type Input = String;
+    type Output = ();
+}
+
+#[cordis::event(name = "app.choose", mode = "serial")]
+#[allow(dead_code)]
+trait Choose {
+    type Input = String;
+    type Output = String;
+}
+
+#[cordis::event(name = "app.check", mode = "bail")]
+#[allow(dead_code)]
+trait Check {
+    type Input = String;
+    type Output = String;
+}
+
+#[cordis::event(name = "app.rewrite", mode = "waterfall")]
+#[allow(dead_code)]
+trait Rewrite {
+    type Input = String;
+    type Output = String;
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct Config {
     prefix: String,
@@ -103,7 +133,6 @@ async fn macros_generate_native_component_metadata_and_adapter() {
         StableWireOneService::ABI_HASH,
         StableWireTwoService::ABI_HASH
     );
-    assert_eq!(BeforeRunEvent::NAME, "app.before-run");
 
     let descriptor = Consumer::descriptor();
     assert_eq!(descriptor.name, "consumer");
@@ -154,6 +183,73 @@ async fn macros_generate_native_component_metadata_and_adapter() {
         ["dynamic:ready", "test:ready"]
     );
     runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn event_macro_generates_codec_and_all_dispatch_modes() {
+    assert_eq!(BeforeRunEvent::NAME, "app.before-run");
+    assert_eq!(BeforeRunEvent::MODE, cordis::EventMode::Parallel);
+    assert_eq!(
+        <BeforeRunEvent as EventSpec>::event_id().name(),
+        "app.before-run"
+    );
+
+    let encoded = BeforeRunEvent::encode_input(&"payload".to_owned()).unwrap();
+    assert_eq!(BeforeRunEvent::decode_input(&encoded).unwrap(), "payload");
+    assert!(matches!(
+        BeforeRunEvent::decode_input(&[0xC1]),
+        Err(CordisError::EventDecodeFailed { .. })
+    ));
+    let event_effects = EffectSet::new("event-listeners");
+    let (_listener_guard, listener_scope) = event_effects.effect("before-run").unwrap();
+    let before_run = BeforeRunEvent::runtime();
+    before_run
+        .listen(
+            &listener_scope,
+            ListenerOptions::global(),
+            |input| async move { Ok(ControlFlow::Break(format!("{input}:done"))) },
+        )
+        .unwrap();
+    assert_eq!(
+        BeforeRunEvent::dispatch(&before_run, EventTarget::Global, &"start".to_owned())
+            .await
+            .unwrap(),
+        [ControlFlow::Break("start:done".to_owned())]
+    );
+
+    let announce = AnnounceEvent::runtime();
+    AnnounceEvent::dispatch(&announce, EventTarget::Global, &"ready".to_owned(), |_| {}).unwrap();
+    assert_eq!(
+        ChooseEvent::dispatch(
+            &ChooseEvent::runtime(),
+            EventTarget::Global,
+            &"choice".to_owned()
+        )
+        .await
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        CheckEvent::dispatch(
+            &CheckEvent::runtime(),
+            EventTarget::Global,
+            &"check".to_owned()
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        RewriteEvent::dispatch(
+            &RewriteEvent::runtime(),
+            EventTarget::Global,
+            "rewrite".to_owned()
+        )
+        .await
+        .unwrap(),
+        "rewrite"
+    );
+
+    event_effects.dispose().await.unwrap();
 }
 
 #[allow(dead_code)]
