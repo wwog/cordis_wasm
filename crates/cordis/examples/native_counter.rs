@@ -41,7 +41,7 @@ pub struct CounterConsumer;
 impl CounterConsumer {
     #[cordis::apply]
     async fn start(
-        self,
+        &mut self,
         context: ComponentContext<CounterConsumerDependencies>,
         config: CounterConfig,
     ) -> Result<(), cordis::CordisError> {

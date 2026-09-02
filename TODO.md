@@ -61,7 +61,7 @@
 - [x] `#[cordis::service]`：规范化 ABI hash、typed client、native fast path 与动态 MessagePack dispatcher。
 - [x] `#[cordis::event]`：EventId、稳定 ABI、MessagePack codec 与五种模式 typed dispatch helpers。
 - [x] `#[cordis::component]` / `#[cordis::inject]`：descriptor、required inject、强类型依赖字段与 native apply adapter。
-- [ ] method-level inject child Fiber。
+- [x] method-level inject child Fiber：同实例串行执行、独立依赖/EffectSet、provider 变更重载与父 effect 级联 retire。
 - [~] config schema 生成与 `trybuild` compile-fail 测试（基础 schema 与 apply 签名诊断已完成）。
 - [x] facade crate 和真实调用注入服务的 native counter 示例。
 

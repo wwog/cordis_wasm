@@ -1,0 +1,5 @@
+error: method-level #[cordis::inject] method must be async
+  --> tests/ui/non_async_method_inject.rs:21:8
+   |
+21 |     fn bind_clock(
+   |        ^^^^^^^^^^

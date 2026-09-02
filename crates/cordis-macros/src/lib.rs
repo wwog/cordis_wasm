@@ -829,6 +829,16 @@ fn expand_component(
                     )),*
                 ]
             }
+
+            fn resolve(
+                resolver: &dyn ::cordis::DependencyResolver,
+            ) -> Result<Self, ::cordis::CordisError> {
+                Ok(Self::new(
+                    #(#clients::new(resolver.resolve(
+                        &<#injects as ::cordis::ServiceSpec>::service_id()
+                    )?)?),*
+                ))
+            }
         }
 
         impl ::cordis::ComponentDefinition for #ident {
@@ -848,6 +858,9 @@ fn expand_component(
     })
 }
 
+// Keep validation and the generated dependency/registration templates together so their
+// method-signature contract cannot drift independently.
+#[allow(clippy::too_many_lines)]
 fn expand_component_impl(item: &mut ItemImpl) -> syn::Result<proc_macro2::TokenStream> {
     if item.trait_.is_some() {
         return Err(syn::Error::new_spanned(
@@ -855,12 +868,24 @@ fn expand_component_impl(item: &mut ItemImpl) -> syn::Result<proc_macro2::TokenS
             "component_impl must be used on an inherent impl",
         ));
     }
+    let self_ty = &item.self_ty;
+    let component = type_ident(self_ty)?;
     let mut apply_method = None;
+    let mut dependency_types = Vec::new();
+    let mut method_registrations = Vec::new();
     for impl_item in &mut item.items {
         let ImplItem::Fn(method) = impl_item else {
             continue;
         };
-        if take_marker(&mut method.attrs, "apply") {
+        let is_apply = take_marker(&mut method.attrs, "apply");
+        let injected_services = take_injects(&mut method.attrs)?;
+        if is_apply {
+            if !injected_services.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    &method.sig.ident,
+                    "#[cordis::apply] cannot also declare #[cordis::inject]",
+                ));
+            }
             if apply_method.is_some() {
                 return Err(syn::Error::new_spanned(
                     &method.sig.ident,
@@ -874,16 +899,129 @@ fn expand_component_impl(item: &mut ItemImpl) -> syn::Result<proc_macro2::TokenS
                 ));
             }
             let receiver = method.sig.receiver().ok_or_else(|| {
-                syn::Error::new_spanned(&method.sig, "#[cordis::apply] method must take self")
+                syn::Error::new_spanned(&method.sig, "#[cordis::apply] method must take &mut self")
             })?;
-            if receiver.reference.is_some() || method.sig.inputs.len() != 3 {
+            if receiver.reference.is_none()
+                || receiver.mutability.is_none()
+                || method.sig.inputs.len() != 3
+            {
                 return Err(syn::Error::new_spanned(
                     &method.sig,
-                    "#[cordis::apply] signature must be `async fn name(self, context, config) -> Result<(), CordisError>`",
+                    "#[cordis::apply] signature must be `async fn name(&mut self, context, config) -> Result<(), CordisError>`",
                 ));
             }
             apply_method = Some(method.sig.ident.clone());
+            continue;
         }
+
+        if injected_services.is_empty() {
+            continue;
+        }
+        if method.sig.asyncness.is_none() {
+            return Err(syn::Error::new_spanned(
+                &method.sig.ident,
+                "method-level #[cordis::inject] method must be async",
+            ));
+        }
+        if !method.sig.generics.params.is_empty() || method.sig.generics.where_clause.is_some() {
+            return Err(syn::Error::new_spanned(
+                &method.sig.generics,
+                "method-level #[cordis::inject] method cannot be generic",
+            ));
+        }
+        let receiver = method.sig.receiver().ok_or_else(|| {
+            syn::Error::new_spanned(
+                &method.sig,
+                "method-level #[cordis::inject] method must take &mut self",
+            )
+        })?;
+        if receiver.reference.is_none()
+            || receiver.mutability.is_none()
+            || method.sig.inputs.len() != 2
+        {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "method-level #[cordis::inject] signature must be `async fn name(&mut self, context: MethodContext<...>) -> Result<(), CordisError>`",
+            ));
+        }
+
+        let method_ident = method.sig.ident.clone();
+        let deps = format_ident!(
+            "{}{}Dependencies",
+            component,
+            to_pascal_case(&method_ident.to_string())
+        );
+        let visibility = &method.vis;
+        let injects = injected_services
+            .iter()
+            .cloned()
+            .map(service_marker)
+            .collect::<syn::Result<Vec<_>>>()?;
+        let clients = injected_services
+            .iter()
+            .cloned()
+            .map(service_client)
+            .collect::<syn::Result<Vec<_>>>()?;
+        let fields = injected_services
+            .iter()
+            .map(service_field)
+            .collect::<syn::Result<Vec<_>>>()?;
+        let mut unique_fields = std::collections::BTreeSet::new();
+        for field in &fields {
+            if !unique_fields.insert(field.to_string()) {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    "injected services must have distinct client field names",
+                ));
+            }
+        }
+        dependency_types.push(quote! {
+            #[derive(Clone, Debug)]
+            #visibility struct #deps {
+                #(#visibility #fields: #clients),*
+            }
+
+            impl #deps {
+                #visibility fn new(#(#fields: #clients),*) -> Self {
+                    Self { #(#fields),* }
+                }
+            }
+
+            impl ::cordis::DependencySet for #deps {
+                fn injects() -> ::std::vec::Vec<::cordis::InjectSpec> {
+                    vec![
+                        #(::cordis::InjectSpec::required(
+                            <#injects as ::cordis::ServiceSpec>::service_id()
+                        )),*
+                    ]
+                }
+
+                fn resolve(
+                    resolver: &dyn ::cordis::DependencyResolver,
+                ) -> Result<Self, ::cordis::CordisError> {
+                    Ok(Self::new(
+                        #(#clients::new(resolver.resolve(
+                            &<#injects as ::cordis::ServiceSpec>::service_id()
+                        )?)?),*
+                    ))
+                }
+            }
+        });
+        method_registrations.push(quote! {
+            {
+                let instance = instance.clone();
+                context.register_method::<#deps, _, _>(
+                    concat!(stringify!(#component), "::", stringify!(#method_ident)),
+                    move |method_context| {
+                        let instance = instance.clone();
+                        async move {
+                            let mut instance = instance.lock().await;
+                            Self::#method_ident(&mut *instance, method_context).await
+                        }
+                    },
+                ).await?;
+            }
+        });
     }
     let method = apply_method.ok_or_else(|| {
         syn::Error::new_spanned(
@@ -891,9 +1029,10 @@ fn expand_component_impl(item: &mut ItemImpl) -> syn::Result<proc_macro2::TokenS
             "component_impl requires one #[cordis::apply] method",
         )
     })?;
-    let self_ty = &item.self_ty;
     Ok(quote! {
         #item
+
+        #(#dependency_types)*
 
         impl ::cordis::Component for #self_ty {
             fn apply(
@@ -904,8 +1043,18 @@ fn expand_component_impl(item: &mut ItemImpl) -> syn::Result<proc_macro2::TokenS
                 Output = Result<::cordis::ComponentEffects, ::cordis::CordisError>
             > + Send {
                 let effects = context.effect_set();
+                let fiber = context.context().fiber();
+                let instance = ::cordis::ComponentCell::new(self);
                 async move {
-                    Self::#method(self, context, config).await?;
+                    let result = ::cordis::catch_component_future(fiber, async {
+                        #(#method_registrations)*
+                        let mut instance = instance.lock().await;
+                        Self::#method(&mut *instance, context, config).await
+                    }).await;
+                    if let Err(error) = result {
+                        let _ = effects.dispose().await;
+                        return Err(error);
+                    }
                     Ok(::cordis::ComponentEffects::new(effects))
                 }
             }
@@ -1081,6 +1230,34 @@ fn service_field(ty: &Type) -> syn::Result<syn::Ident> {
             "injected service name cannot be converted to a Rust field name",
         )
     })
+}
+
+fn type_ident(ty: &Type) -> syn::Result<syn::Ident> {
+    let Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "component implementation must target a concrete type path",
+        ));
+    };
+    path.path
+        .segments
+        .last()
+        .map(|segment| segment.ident.clone())
+        .ok_or_else(|| syn::Error::new_spanned(ty, "component type path cannot be empty"))
+}
+
+fn to_pascal_case(value: &str) -> String {
+    value
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut characters = part.chars();
+            let Some(first) = characters.next() else {
+                return String::new();
+            };
+            first.to_uppercase().chain(characters).collect::<String>()
+        })
+        .collect()
 }
 
 fn to_snake_case(value: &str) -> String {

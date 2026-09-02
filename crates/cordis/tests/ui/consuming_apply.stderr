@@ -1,0 +1,9 @@
+error: #[cordis::apply] signature must be `async fn name(&mut self, context, config) -> Result<(), CordisError>`
+  --> tests/ui/consuming_apply.rs:7:5
+   |
+ 7 | /     async fn start(
+ 8 | |         self,
+ 9 | |         _context: cordis::ComponentContext<ConsumingApplyDependencies>,
+10 | |         _config: (),
+11 | |     ) -> Result<(), cordis::CordisError> {
+   | |________________________________________^

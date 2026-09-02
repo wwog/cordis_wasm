@@ -12,6 +12,9 @@ pub enum CordisError {
     #[error("fiber {fiber} does not exist")]
     UnknownFiber { fiber: FiberId },
 
+    #[error("fiber {fiber} is not loading or active")]
+    InactiveFiber { fiber: FiberId },
+
     #[error("context belongs to fiber {actual}, expected fiber {expected}")]
     ContextFiberMismatch { expected: FiberId, actual: FiberId },
 
@@ -43,6 +46,18 @@ pub enum CordisError {
         actual: ServiceId,
     },
 
+    #[error("component context has no method-fiber runtime")]
+    MissingMethodRuntime,
+
+    #[error("provider fiber {provider} has no dispatcher for service {service}")]
+    MissingServiceDispatcher {
+        provider: FiberId,
+        service: ServiceId,
+    },
+
+    #[error("committed dependency {service} has no provider")]
+    MissingCommittedProvider { service: ServiceId },
+
     #[error("service {service} has no method with id {method_id:#010x}")]
     UnknownServiceMethod { service: ServiceId, method_id: u32 },
 
@@ -63,6 +78,9 @@ pub enum CordisError {
 
     #[error("runtime supervisor task failed: {message}")]
     SupervisorFailed { message: String },
+
+    #[error("fiber {fiber} executor panicked: {message}")]
+    FiberExecutorPanicked { fiber: FiberId, message: String },
 
     #[error("fiber {fiber} unload is waiting for active consumers")]
     TransitionBlocked { fiber: FiberId },

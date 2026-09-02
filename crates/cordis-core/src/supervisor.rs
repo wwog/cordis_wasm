@@ -3,8 +3,14 @@ use crate::{
     FiberMachine, FiberState, FiberTransition, InjectSpec, ProviderKey, RealmId, RegistryChange,
     ResolvedInject, TransitionAdvance,
 };
+use futures::FutureExt;
+use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use tokio::sync::{mpsc, oneshot};
+use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::pin::Pin;
+use std::sync::{Arc, RwLock};
+use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 const COMMAND_BUFFER: usize = 64;
@@ -17,10 +23,29 @@ pub struct Runtime {
 }
 
 /// Cloneable command handle for the runtime supervisor.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RuntimeHandle {
     commands: mpsc::Sender<Command>,
+    executors: Arc<RwLock<BTreeMap<FiberId, FiberExecutor>>>,
+    changes: Arc<Notify>,
 }
+
+impl std::fmt::Debug for RuntimeHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let executor_count = self
+            .executors
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        formatter
+            .debug_struct("RuntimeHandle")
+            .field("executor_count", &executor_count)
+            .finish_non_exhaustive()
+    }
+}
+
+pub(crate) type FiberWork = Pin<Box<dyn Future<Output = Result<(), CordisError>> + Send + 'static>>;
+pub(crate) type FiberExecutor = Arc<dyn Fn(FiberTransition) -> FiberWork + Send + Sync + 'static>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FiberSnapshot {
@@ -74,6 +99,7 @@ struct FiberRecord {
 enum Command {
     CreateFiber {
         parent: Option<FiberId>,
+        require_live_parent: bool,
         reply: oneshot::Sender<Result<FiberId, CordisError>>,
     },
     AllocateRealm {
@@ -138,8 +164,14 @@ impl Runtime {
     pub fn start() -> Self {
         let (commands, receiver) = mpsc::channel(COMMAND_BUFFER);
         let supervisor = tokio::spawn(run_supervisor(receiver));
+        let executors = Arc::new(RwLock::new(BTreeMap::new()));
+        let changes = Arc::new(Notify::new());
         Self {
-            handle: RuntimeHandle { commands },
+            handle: RuntimeHandle {
+                commands,
+                executors,
+                changes,
+            },
             supervisor,
         }
     }
@@ -173,8 +205,34 @@ impl RuntimeHandle {
     /// [`CordisError::RuntimeClosed`] after shutdown.
     pub async fn create_fiber(&self, parent: Option<FiberId>) -> Result<FiberId, CordisError> {
         let (reply, response) = oneshot::channel();
-        self.send(Command::CreateFiber { parent, reply }).await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        self.send(Command::CreateFiber {
+            parent,
+            require_live_parent: false,
+            reply,
+        })
+        .await?;
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        result
+    }
+
+    /// Creates a child fiber while its parent is loading or active.
+    ///
+    /// This is the lifecycle-safe entry point used by generated method-level injects.
+    pub(crate) async fn create_live_child_fiber(
+        &self,
+        parent: FiberId,
+    ) -> Result<FiberId, CordisError> {
+        let (reply, response) = oneshot::channel();
+        self.send(Command::CreateFiber {
+            parent: Some(parent),
+            require_live_parent: true,
+            reply,
+        })
+        .await?;
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        result
     }
 
     /// Allocates a realm ID that will never be reused by this process.
@@ -209,7 +267,12 @@ impl RuntimeHandle {
             reply,
         })
         .await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(change) = &result {
+            self.dispatch(change.transitions.clone());
+        }
+        result
     }
 
     /// Freezes the current ready dependency resolution for one load epoch.
@@ -241,7 +304,12 @@ impl RuntimeHandle {
             reply,
         })
         .await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(change) = &result {
+            self.dispatch(change.transitions.clone());
+        }
+        result
     }
 
     /// Releases one provider slot owned by `provider`.
@@ -261,7 +329,12 @@ impl RuntimeHandle {
             reply,
         })
         .await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(change) = &result {
+            self.dispatch(change.transitions.clone());
+        }
+        result
     }
 
     /// Reports work completion without running user code inside the supervisor.
@@ -283,7 +356,12 @@ impl RuntimeHandle {
             reply,
         })
         .await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(update) = &result {
+            self.dispatch(update.ready.clone());
+        }
+        result
     }
 
     /// Marks a fiber retired and returns cleanup work when required.
@@ -294,7 +372,12 @@ impl RuntimeHandle {
     pub async fn retire_fiber(&self, fiber: FiberId) -> Result<Vec<FiberTransition>, CordisError> {
         let (reply, response) = oneshot::channel();
         self.send(Command::RetireFiber { fiber, reply }).await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(transitions) = &result {
+            self.dispatch(transitions.clone());
+        }
+        result
     }
 
     /// Explicitly retries a failed fiber against its latest desired epoch.
@@ -305,7 +388,12 @@ impl RuntimeHandle {
     pub async fn restart_fiber(&self, fiber: FiberId) -> Result<Vec<FiberTransition>, CordisError> {
         let (reply, response) = oneshot::channel();
         self.send(Command::RestartFiber { fiber, reply }).await?;
-        response.await.map_err(|_| CordisError::RuntimeClosed)?
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(transitions) = &result {
+            self.dispatch(transitions.clone());
+        }
+        result
     }
 
     /// Returns a stable snapshot produced by the supervisor.
@@ -331,14 +419,93 @@ impl RuntimeHandle {
             .await
             .map_err(|_| CordisError::RuntimeClosed)
     }
+
+    pub(crate) fn install_executor(&self, fiber: FiberId, executor: FiberExecutor) {
+        self.executors
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(fiber, executor);
+    }
+
+    pub(crate) fn remove_executor(&self, fiber: FiberId) {
+        self.executors
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&fiber);
+    }
+
+    pub(crate) async fn await_disposed(&self, fiber: FiberId) -> Result<(), CordisError> {
+        loop {
+            let changed = self.changes.notified();
+            let snapshot = self.snapshot().await?;
+            let state = snapshot
+                .fibers
+                .iter()
+                .find(|candidate| candidate.id == fiber)
+                .ok_or(CordisError::UnknownFiber { fiber })?
+                .state;
+            if state == FiberState::Disposed {
+                return Ok(());
+            }
+            changed.await;
+        }
+    }
+
+    fn dispatch(&self, transitions: Vec<FiberTransition>) {
+        for transition in transitions {
+            let executor = self
+                .executors
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&transition.fiber)
+                .cloned();
+            let Some(executor) = executor else {
+                continue;
+            };
+            let handle = self.clone();
+            tokio::spawn(async move {
+                let work = catch_unwind(AssertUnwindSafe(|| executor(transition.clone())));
+                let result = match work {
+                    Ok(work) => match AssertUnwindSafe(work).catch_unwind().await {
+                        Ok(result) => result,
+                        Err(payload) => Err(CordisError::FiberExecutorPanicked {
+                            fiber: transition.fiber,
+                            message: panic_message(payload.as_ref()),
+                        }),
+                    },
+                    Err(payload) => Err(CordisError::FiberExecutorPanicked {
+                        fiber: transition.fiber,
+                        message: panic_message(payload.as_ref()),
+                    }),
+                };
+                let _ = handle
+                    .complete_transition(transition.fiber, transition.generation, result)
+                    .await;
+            });
+        }
+    }
+}
+
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_owned()
+    }
 }
 
 async fn run_supervisor(mut commands: mpsc::Receiver<Command>) {
     let mut state = SupervisorState::default();
     while let Some(command) = commands.recv().await {
         match command {
-            Command::CreateFiber { parent, reply } => {
-                let result = create_fiber(&mut state, parent);
+            Command::CreateFiber {
+                parent,
+                require_live_parent,
+                reply,
+            } => {
+                let result = create_fiber(&mut state, parent, require_live_parent);
                 let _ = reply.send(result);
             }
             Command::AllocateRealm { reply } => {
@@ -406,11 +573,21 @@ async fn run_supervisor(mut commands: mpsc::Receiver<Command>) {
 fn create_fiber(
     state: &mut SupervisorState,
     parent: Option<FiberId>,
+    require_live_parent: bool,
 ) -> Result<FiberId, CordisError> {
-    if let Some(parent) = parent
-        && !state.fibers.contains_key(&parent)
-    {
-        return Err(CordisError::UnknownFiber { fiber: parent });
+    if let Some(parent) = parent {
+        let parent_record = state
+            .fibers
+            .get(&parent)
+            .ok_or(CordisError::UnknownFiber { fiber: parent })?;
+        if require_live_parent
+            && !matches!(
+                parent_record.machine.state(),
+                FiberState::Loading | FiberState::Active
+            )
+        {
+            return Err(CordisError::InactiveFiber { fiber: parent });
+        }
     }
 
     let id = FiberId::next();
@@ -951,6 +1128,10 @@ mod tests {
         let runtime = Runtime::start();
         let handle = runtime.handle();
         let root = handle.create_fiber(None).await.unwrap();
+        assert_eq!(
+            handle.create_live_child_fiber(root).await,
+            Err(CordisError::InactiveFiber { fiber: root })
+        );
         let child = handle.create_fiber(Some(root)).await.unwrap();
         let unknown = FiberId::next();
 

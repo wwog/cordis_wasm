@@ -441,6 +441,10 @@ pub trait Component: Send + 'static {
 }
 ```
 
+`Component::apply(self, ...)` 是生成给运行时的 owning adapter：它把实例移入异步串行的
+`ComponentCell`。用户标注 `#[cordis::apply]` 的方法使用 `&mut self`，从而让 apply 与所有
+method-level inject 在同一个组件实例上执行；生成的 adapter 不会在 apply 后丢弃实例。
+
 运行时将原生和 WASM 都抹平成：
 
 ```rust
@@ -473,13 +477,20 @@ pub struct Consumer;
 #[cordis::component_impl]
 impl Consumer {
     #[cordis::apply]
-    async fn start(self, ctx: ComponentContext<Self>, cfg: Config) -> Result<()> {
+    async fn start(
+        &mut self,
+        ctx: ComponentContext<ConsumerDependencies>,
+        cfg: Config,
+    ) -> Result<()> {
         ctx.deps().counter.add(cfg.initial).await?;
         Ok(())
     }
 
     #[cordis::inject(Timer)]
-    async fn bind_timer(&mut self, ctx: MethodContext<Self>) -> Result<()> {
+    async fn bind_timer(
+        &mut self,
+        ctx: MethodContext<ConsumerBindTimerDependencies>,
+    ) -> Result<()> {
         // 生成一个依赖 Timer 的 child Fiber，等价于 TS method @Inject。
         Ok(())
     }
@@ -496,6 +507,19 @@ impl Consumer {
 - 清晰的 `syn::Error`，并用 `trybuild` 固化 compile-fail 文案。
 
 宏不依赖 nightly，不解析跨 crate Rust 源文件；所有跨 crate 信息通过 trait/const/生成 schema 传递。
+
+method-level inject 的 native 路径已经落地为：
+
+- 每个注入方法生成独立的 `XxxMethodDependencies`，因此父 Fiber 不会被迫 inject 仅供方法使用的服务；
+- `MethodFiberRuntime` 由 `RuntimeHandle` 和 `NativeServiceRegistry` 组成，`ComponentContext::with_method_runtime`
+  将它交给 owning adapter；没有该 runtime 时明确返回 `MissingMethodRuntime`；
+- child Fiber 继承父 Context 的 realm/intercept overlay，但拥有独立 FiberId、committed view 和 EffectSet；
+- Supervisor 仍只计算状态迁移；注册在 `RuntimeHandle` 外侧的 executor 执行用户方法和异步 disposer，
+  不会在 Supervisor actor 内运行用户代码；
+- 同一组件实例的 apply 和多个注入方法通过 `ComponentCell` 串行取得 `&mut self`，避免并发可变访问；
+- provider 出现时加载 child，丢失或替换时先 dispose 方法 EffectSet 再重载；父 EffectSet 的 disposer
+  retire child 并等待其到达 `Disposed`，实现父卸载级联；
+- `create_live_child_fiber` 只接受处于 `Loading` 或 `Active` 的父 Fiber，已失活的 Context 不能登记 child。
 
 当前 native service API 已落地为两条语义一致但成本不同的路径：
 
