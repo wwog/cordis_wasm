@@ -1,0 +1,5 @@
+error[E0609]: no field `clock` on type `&UndeclaredDependencyDependencies`
+  --> tests/ui/undeclared_dependency.rs:17:32
+   |
+17 |         let _ = context.deps().clock.now().await;
+   |                                ^^^^^ unknown field

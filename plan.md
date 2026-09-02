@@ -428,7 +428,7 @@ Active provider 离开时：
 
 ```rust
 pub trait Component: Send + 'static {
-    type Config: DeserializeOwned + JsonSchema + ValidateConfig + Send + Sync;
+    type Config: DeserializeOwned + JsonSchema + Send + Sync;
     type Deps: DependencySet;
 
     fn descriptor() -> &'static ComponentDescriptor;
@@ -815,10 +815,9 @@ WASM component 通常已经把 Rust guest 依赖编进单个 artifact，不能�
 Native config：
 
 - `serde` 反序列化；
-- `schemars` 生成 Draft 2020-12 schema；
-- `jsonschema` 在动态入口统一校验；
-- 组件可实现 `ValidateConfig` 做跨字段检查；
-- error 带 JSON Pointer path，与 TS `ValidationError` 对齐。
+- `schemars` 使用显式 `SchemaSettings::draft2020_12()` 生成 schema，不依赖库的可变默认值；
+- 当前 native descriptor 已生成 schema，并用 trait bound 在编译期约束 `DeserializeOwned + JsonSchema`；
+- `jsonschema` 校验、可选的跨字段校验 hook，以及带 JSON Pointer path 的配置错误，在动态组件入口落地时一并实现；当前没有动态配置入口，避免预先加入无调用点 API。
 
 WASM component descriptor 至少包括：
 
@@ -966,6 +965,9 @@ write = []
 6. native counter 示例和 API 文档。
 
 退出标准：常规插件代码不接触 type erasure、payload codec 或手写 disposer boxed future。
+
+当前状态：Phase 2 已完成。config schema 固定为 Draft 2020-12；trybuild 覆盖配置 trait
+约束、未声明依赖、非 Send future、重复 inject、非法宏组合和现有 service/event/apply 签名诊断。
 
 ### Phase 3：cordis-wasm / guest SDK
 

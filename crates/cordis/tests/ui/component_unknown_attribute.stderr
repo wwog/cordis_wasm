@@ -1,0 +1,5 @@
+error: unknown attribute key `unknown`
+ --> tests/ui/component_unknown_attribute.rs:1:21
+  |
+1 | #[cordis::component(unknown = "value")]
+  |                     ^^^^^^^^^^^^^^^^^

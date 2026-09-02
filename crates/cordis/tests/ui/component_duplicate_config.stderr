@@ -1,0 +1,5 @@
+error: attribute key `config` was specified more than once
+ --> tests/ui/component_duplicate_config.rs:1:34
+  |
+1 | #[cordis::component(config = (), config = ())]
+  |                                  ^^^^^^^^^^^

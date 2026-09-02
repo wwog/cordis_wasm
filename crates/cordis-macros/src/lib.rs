@@ -773,6 +773,7 @@ fn expand_component(
     item: &mut ItemStruct,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let metas = parse_metas(args)?;
+    validate_metas(&metas, &["name", "config"])?;
     let name = meta_string(&metas, "name")?.unwrap_or_else(|| item.ident.to_string());
     let config = meta_type(&metas, "config")?.unwrap_or_else(|| syn::parse_quote!(()));
     let injected_services = take_injects(&mut item.attrs)?;

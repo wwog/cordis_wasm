@@ -1,0 +1,7 @@
+error: injected services must have distinct client field names
+ --> tests/ui/duplicate_inject.rs:6:1
+  |
+6 | #[cordis::component]
+  | ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `cordis::component` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -3,7 +3,7 @@ use crate::{
     ServiceId, ServiceKey, TransitionKind,
 };
 use futures::FutureExt;
-use schemars::{JsonSchema, Schema, schema_for};
+use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -648,7 +648,9 @@ pub trait Component: ComponentDefinition {
     ) -> impl Future<Output = Result<ComponentEffects, CordisError>> + Send;
 }
 
-/// Generates a JSON Schema without requiring macros to name schemars internals.
+/// Generates a Draft 2020-12 JSON Schema without requiring macros to name schemars internals.
 pub fn config_schema<T: JsonSchema>() -> Schema {
-    schema_for!(T)
+    SchemaSettings::draft2020_12()
+        .into_generator()
+        .into_root_schema_for::<T>()
 }

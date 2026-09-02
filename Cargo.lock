@@ -128,6 +128,7 @@ dependencies = [
  "cordis-macros",
  "schemars",
  "serde",
+ "serde_json",
  "tokio",
  "trybuild",
 ]

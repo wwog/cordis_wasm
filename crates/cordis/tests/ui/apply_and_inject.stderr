@@ -1,0 +1,5 @@
+error: #[cordis::apply] cannot also declare #[cordis::inject]
+  --> tests/ui/apply_and_inject.rs:13:14
+   |
+13 |     async fn start(
+   |              ^^^^^

@@ -99,6 +99,7 @@ trait Rewrite {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct Config {
+    #[serde(rename = "message-prefix")]
     prefix: String,
 }
 
@@ -245,7 +246,24 @@ async fn macros_generate_native_component_metadata_and_adapter() {
     assert_eq!(descriptor.injects.len(), 1);
     assert_eq!(descriptor.injects[0].service, LoggerService::service_id());
     let schema = (descriptor.config_schema)();
-    assert!(schema.get("properties").is_some());
+    assert_eq!(
+        schema.get("$schema").and_then(serde_json::Value::as_str),
+        Some("https://json-schema.org/draft/2020-12/schema")
+    );
+    assert_eq!(
+        schema
+            .pointer("/properties/message-prefix/type")
+            .and_then(serde_json::Value::as_str),
+        Some("string")
+    );
+    assert_eq!(
+        schema
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|required| required.first())
+            .and_then(serde_json::Value::as_str),
+        Some("message-prefix")
+    );
 
     let runtime = Runtime::start();
     let handle = runtime.handle();
