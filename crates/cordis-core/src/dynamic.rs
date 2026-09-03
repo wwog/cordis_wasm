@@ -88,6 +88,7 @@ pub trait KernelHost: Send + Sync + 'static {
         &self,
         fiber: FiberId,
         request: RegistrationRequest,
+        realm: Option<crate::RealmId>,
         scope: EffectScope,
     ) -> ComponentFuture<'_, ()>;
 }
@@ -97,6 +98,7 @@ pub trait KernelHost: Send + Sync + 'static {
 pub struct InstanceHost {
     fiber: FiberId,
     runtime: RuntimeHandle,
+    context: Context,
     effects: EffectSet,
     kernel: Arc<dyn KernelHost>,
 }
@@ -121,6 +123,23 @@ impl InstanceHost {
         Self {
             fiber,
             runtime,
+            context: Context::root(fiber),
+            effects,
+            kernel,
+        }
+    }
+
+    pub fn new_in_context(
+        fiber: FiberId,
+        runtime: RuntimeHandle,
+        context: Context,
+        effects: EffectSet,
+        kernel: Arc<dyn KernelHost>,
+    ) -> Self {
+        Self {
+            fiber,
+            runtime,
+            context,
             effects,
             kernel,
         }
@@ -136,6 +155,10 @@ impl InstanceHost {
 
     pub const fn effects(&self) -> &EffectSet {
         &self.effects
+    }
+
+    pub const fn context(&self) -> &Context {
+        &self.context
     }
 
     pub fn log(&self, level: &str, message: &str) {
@@ -166,12 +189,19 @@ impl InstanceHost {
     ///
     /// Returns an inactive-effect or Kernel registration error.
     pub async fn register(&self, request: RegistrationRequest) -> Result<EffectGuard, CordisError> {
-        let label = match &request {
-            RegistrationRequest::Provide(service) => format!("provide:{}", service.name()),
-            RegistrationRequest::Listen { event, .. } => format!("listen:{}", event.name()),
+        let (label, realm) = match &request {
+            RegistrationRequest::Provide(service) => (
+                format!("provide:{}", service.name()),
+                Some(self.context.resolve_realm(service)?),
+            ),
+            RegistrationRequest::Listen { event, .. } => (format!("listen:{}", event.name()), None),
         };
         let (guard, scope) = self.effects.effect(label)?;
-        if let Err(error) = self.kernel.register(self.fiber, request, scope).await {
+        if let Err(error) = self
+            .kernel
+            .register(self.fiber, request, realm, scope)
+            .await
+        {
             let _ = guard.dispose().await;
             return Err(error);
         }
@@ -206,6 +236,7 @@ struct DynamicFiberState {
     factory: Arc<dyn ComponentFactory>,
     kernel: Arc<dyn KernelHost>,
     config: Value,
+    context: Context,
     revision: u64,
     settled_revision: Option<u64>,
     load_error: Option<CordisError>,
@@ -500,6 +531,7 @@ impl RuntimeHandle {
             factory,
             kernel,
             config,
+            context: context.clone(),
             revision: 0,
             settled_revision: None,
             load_error: None,
@@ -566,7 +598,13 @@ async fn run_dynamic_transition(
             }
             let factory = state.factory.clone();
             let effects = EffectSet::new(format!("dynamic:{}", factory.descriptor().name));
-            let host = InstanceHost::new(fiber, runtime, effects.clone(), state.kernel.clone());
+            let host = InstanceHost::new_in_context(
+                fiber,
+                runtime,
+                state.context.clone(),
+                effects.clone(),
+                state.kernel.clone(),
+            );
             let result = match factory.instantiate(host).await {
                 Ok(mut instance) => match instance.activate(state.config.clone()).await {
                     Ok(()) => {
@@ -634,6 +672,7 @@ mod tests {
             &self,
             _: FiberId,
             _: RegistrationRequest,
+            _: Option<crate::RealmId>,
             _: EffectScope,
         ) -> ComponentFuture<'_, ()> {
             Box::pin(async { Ok(()) })

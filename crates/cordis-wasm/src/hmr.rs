@@ -277,6 +277,24 @@ impl<R: ReloadRuntime> HmrManager<R> {
         &self.cache
     }
 
+    /// Returns the canonical paths of all currently tracked artifacts.
+    pub fn tracked_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.paths.keys()
+    }
+
+    /// Stops tracking one Entry without changing its running instance.
+    pub fn untrack(&mut self, entry: &str) -> Option<Arc<CompiledArtifact>> {
+        if let Some(path) = self.entry_paths.remove(entry)
+            && let Some(entries) = self.paths.get_mut(&path)
+        {
+            entries.remove(entry);
+            if entries.is_empty() {
+                self.paths.remove(&path);
+            }
+        }
+        self.current.remove(entry)
+    }
+
     /// Preflights and starts tracking an already-active Entry artifact.
     ///
     /// # Errors

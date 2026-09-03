@@ -46,14 +46,7 @@ fn build_guests() -> ExitCode {
             match Command::new("cargo")
                 .current_dir(&root)
                 .env("CORDIS_GUEST_FIXTURES", fixtures)
-                .args([
-                    "test",
-                    "-p",
-                    "cordis-wasm",
-                    "runtime::tests::guest_sdk_artifacts_run_end_to_end",
-                    "--",
-                    "--exact",
-                ])
+                .args(["test", "-p", "cordis-wasm", "artifacts"])
                 .status()
             {
                 Ok(status) if status.success() => ExitCode::SUCCESS,

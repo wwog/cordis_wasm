@@ -1,0 +1,24 @@
+[package]
+name = "cordis-cli"
+description = "Command-line runner and inspector for Cordis applications"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "cordis"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+cordis-core = { path = "../cordis-core" }
+cordis-loader = { path = "../cordis-loader" }
+cordis-logger = { path = "../cordis-logger" }
+cordis-wasm = { path = "../cordis-wasm" }
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

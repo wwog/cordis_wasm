@@ -10,7 +10,10 @@ repository.workspace = true
 [dependencies]
 blake3.workspace = true
 cordis-core = { path = "../cordis-core" }
+cordis-loader = { path = "../cordis-loader" }
+cordis-logger = { path = "../cordis-logger" }
 futures.workspace = true
+jsonschema.workspace = true
 notify-debouncer-mini.workspace = true
 schemars.workspace = true
 serde.workspace = true

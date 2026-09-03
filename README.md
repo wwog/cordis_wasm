@@ -33,6 +33,12 @@ cargo run -p cordis --example native_counter
 # 输出：counter value: 3
 
 cargo test --workspace
+
+# 构建示例 Component，再预检或运行声明式应用
+cargo run -p xtask -- build-guests
+cargo run -p cordis-cli -- check examples/wasm-app/cordis.json
+cargo run -p cordis-cli -- inspect examples/wasm-app/cordis.json
+cargo run -p cordis-cli -- run examples/wasm-app/cordis.json
 ```
 
 native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生成的 object-safe adapter；`CounterClient::new(Arc<dyn ServiceDispatcher>)` 校验完整 `ServiceId` 后走 MessagePack 动态路径，这条路径就是将来 Wasmtime 边界复用的路径。
@@ -45,6 +51,7 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 - **ABI hash 的稳定性**：只由服务名、方法名、参数类型顺序和返回类型构成；注释、参数改名、方法声明顺序都不影响线协议。
 - **guest 不可信假设**：host effect 表是最终权威，Wasmtime spike 已确认 guest 遗失句柄时 Store drop 不会触发析构，因此清理不依赖 guest 善意。
 - **失败即回滚**：Fiber `apply` 失败进入 `Failed` 并回滚已完成 effects；HMR 用事务流程替换组件，失败从旧 artifact 重建。
+- **声明式运行闭环**：`WasmEntryDriver` 将 Loader Entry、managed realm、动态 Fiber、Kernel 路由和 HMR 绑定为同一生命周期；`cordis check` 只预检，`run` 才激活组件。
 
 ## 文档
 

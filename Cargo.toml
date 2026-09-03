@@ -3,8 +3,11 @@ members = [
     "crates/cordis",
     "crates/cordis-core",
     "crates/cordis-guest",
+    "crates/cordis-cli",
+    "crates/cordis-logger",
     "crates/cordis-loader",
     "crates/cordis-macros",
+    "crates/cordis-timer",
     "crates/cordis-wasm",
     "examples/wasm-counter-consumer",
     "examples/wasm-counter-provider",
@@ -35,7 +38,7 @@ serde-saphyr = "1.2"
 syn = { version = "2", features = ["full", "extra-traits"] }
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "sync", "time", "test-util"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "test-util"] }
 tracing = "0.1"
 trybuild = "1"
 wasmtime = { version = "48.0.1", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }

@@ -402,4 +402,64 @@ mod tests {
         }]);
         assert!(DesiredEpoch::from_resolution(&resolution).is_some());
     }
+
+    #[test]
+    fn generated_transition_sequences_preserve_state_invariants() {
+        for seed in 1_u64..=128 {
+            let fiber = FiberId::next();
+            let mut machine = FiberMachine::new(fiber);
+            let ready = epoch(FiberId::next());
+            let mut random = seed;
+            let mut disposed = false;
+            for _ in 0..256 {
+                random = random
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                match random % 7 {
+                    0 => {
+                        machine.set_desired(DesiredState::Waiting);
+                    }
+                    1 => {
+                        machine.set_desired(DesiredState::Ready(ready.clone()));
+                    }
+                    2 => {
+                        machine.set_desired(DesiredState::Retired);
+                    }
+                    3 => {
+                        machine.restart();
+                    }
+                    4 => {
+                        machine.reload();
+                    }
+                    5 | 6 => {
+                        if let Some(active) = machine.active_transition().cloned() {
+                            let generation = if random % 2 == 0 {
+                                active.generation
+                            } else {
+                                active.generation.saturating_add(1)
+                            };
+                            let result = if random & 8 == 0 {
+                                Ok(())
+                            } else {
+                                Err(CordisError::ComponentFailed {
+                                    component: "generated".into(),
+                                    message: "injected".into(),
+                                })
+                            };
+                            machine.complete(generation, result);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+
+                let transitioning =
+                    matches!(machine.state(), FiberState::Loading | FiberState::Unloading);
+                assert_eq!(machine.active_transition().is_some(), transitioning);
+                if disposed {
+                    assert_eq!(machine.state(), FiberState::Disposed);
+                }
+                disposed |= machine.state() == FiberState::Disposed;
+            }
+        }
+    }
 }

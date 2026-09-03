@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "id": "consumer",
+      "component": "file:../../target/wasm32-wasip2/debug/wasm_counter_consumer.wasm",
+      "config": {},
+      "isolate": {
+        "example.counter": "example"
+      }
+    },
+    {
+      "id": "provider",
+      "component": "file:../../target/wasm32-wasip2/debug/wasm_counter_provider.wasm",
+      "config": {},
+      "isolate": {
+        "example.counter": "example"
+      }
+    }
+  ]
+}

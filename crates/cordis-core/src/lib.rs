@@ -13,6 +13,7 @@ mod id;
 mod native;
 mod service;
 mod supervisor;
+mod tracked;
 
 pub use context::Context;
 pub use dynamic::{
@@ -46,3 +47,4 @@ pub use supervisor::{
     CompletionStatus, DependencyChange, FiberSnapshot, Runtime, RuntimeHandle, RuntimeSnapshot,
     TransitionUpdate,
 };
+pub use tracked::{TrackedList, TrackedMap, TrackingId};

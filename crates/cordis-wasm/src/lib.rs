@@ -2,6 +2,7 @@
 
 mod capability;
 mod hmr;
+mod loader;
 mod runtime;
 
 pub use capability::{WasiCapabilities, WasiPreopen};
@@ -9,6 +10,7 @@ pub use hmr::{
     ArtifactCache, ArtifactHash, CacheMetrics, CompiledArtifact, EntryReload, FiberReloadRuntime,
     HmrError, HmrFuture, HmrManager, HmrWatcher, ReloadReport, ReloadRuntime, ReloadStatus,
 };
+pub use loader::{CheckReport, WasmApplication, WasmEntryDriver, check_entries};
 pub use runtime::{ArtifactPolicy, GuestTaskGroup, WasmComponentFactory};
 
 use wasmtime::component::Component;

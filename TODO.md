@@ -96,8 +96,13 @@
 
 ## Phase 6：配套与发布
 
-- [ ] Timer、Logger、console exporter、tracked collections。
-- [ ] `cordis run/check/inspect/build-component`。
+- [x] Timer timeout/interval/sleep、Logger/console exporter、tracked collections 基础能力。
+- [ ] Timer Stream/throttle/debounce 与 Logger tracing subscriber 集成。
+- [x] Loader → Wasmtime → Supervisor → HMR 运行时装配与声明式双 guest 示例。
+- [x] `cordis run/check/inspect/build-component`。
 - [ ] 属性测试、故障注入、Miri/Loom、跨平台 CI。
+- [x] Fiber 状态机确定性生成序列不变式测试（128 seeds × 256 operations）。
+- [x] MSRV 1.98、Linux/macOS/Windows、fmt/Clippy/rustdoc/真实 WASM E2E CI 基线。
 - [ ] benchmark 后实施有数据支撑的优化。
 - [ ] API review、文档、示例和 `0.1.0` 发布检查。
+- [x] 首轮 public API 审计与 `0.1.0` 阻塞项清单。

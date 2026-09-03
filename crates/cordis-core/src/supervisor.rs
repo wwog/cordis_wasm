@@ -429,6 +429,27 @@ impl RuntimeHandle {
         response.await.map_err(|_| CordisError::RuntimeClosed)
     }
 
+    /// Waits until no Fiber transition is in flight and returns a stable snapshot.
+    /// Fibers waiting for missing dependencies are considered quiescent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CordisError::RuntimeClosed`] after shutdown.
+    pub async fn await_quiescent(&self) -> Result<RuntimeSnapshot, CordisError> {
+        loop {
+            let changed = self.changes.notified();
+            let snapshot = self.snapshot().await?;
+            if snapshot
+                .fibers
+                .iter()
+                .all(|fiber| fiber.active_transition.is_none())
+            {
+                return Ok(snapshot);
+            }
+            changed.await;
+        }
+    }
+
     async fn request_shutdown(&self) -> Result<RuntimeSnapshot, CordisError> {
         let (reply, response) = oneshot::channel();
         self.send(Command::Shutdown { reply }).await?;

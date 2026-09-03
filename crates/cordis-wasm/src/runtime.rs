@@ -931,6 +931,7 @@ mod tests {
             &self,
             _: cordis_core::FiberId,
             _: RegistrationRequest,
+            _: Option<cordis_core::RealmId>,
             scope: EffectScope,
         ) -> ComponentFuture<'_, ()> {
             let registrations = self.active_registrations.clone();
@@ -979,12 +980,16 @@ mod tests {
 
         let runtime = Runtime::start();
         let handle = runtime.handle();
+        let realm = handle.allocate_realm().await?;
+        let service = provider.descriptor().provides[0].clone();
+        let root = handle.create_fiber(None).await?;
+        let provider_context = Context::root(root).isolate(service.clone(), realm);
         let host = Arc::new(FixtureHost::default());
         let registrations = host.active_registrations.clone();
         let mounted_provider = handle
             .mount_dynamic(
                 None,
-                None,
+                Some(&provider_context),
                 provider.clone(),
                 host.clone(),
                 serde_json::json!({}),
@@ -992,7 +997,6 @@ mod tests {
             .await?;
         mounted_provider.await_active().await?;
         assert_eq!(registrations.load(Ordering::SeqCst), 1);
-        let service = provider.descriptor().provides[0].clone();
         let reply = mounted_provider
             .call_service(DynamicCall {
                 service: service.clone(),
@@ -1002,7 +1006,6 @@ mod tests {
             .await?;
         assert_eq!(rmp_serde::from_slice::<u64>(&reply)?, 2);
 
-        let realm = handle.allocate_realm().await?;
         handle
             .provide(
                 ProviderKey::new(service.clone(), realm),
@@ -1022,6 +1025,7 @@ mod tests {
         mounted_consumer.await_active().await?;
         mounted_consumer.retire().await?;
         mounted_provider.retire().await?;
+        handle.retire_fiber(root).await?;
         assert_eq!(registrations.load(Ordering::SeqCst), 0);
         runtime.shutdown().await?;
         Ok(())
