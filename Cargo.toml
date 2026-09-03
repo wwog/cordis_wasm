@@ -11,6 +11,8 @@ members = [
     "crates/cordis-wasm",
     "examples/wasm-counter-consumer",
     "examples/wasm-counter-provider",
+    "examples/wasm-log-plugin",
+    "examples/hybrid-http-gateway",
     "xtask",
 ]
 resolver = "3"

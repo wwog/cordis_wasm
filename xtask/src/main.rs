@@ -38,6 +38,8 @@ fn build_guests() -> ExitCode {
             "wasm-counter-provider",
             "-p",
             "wasm-counter-consumer",
+            "-p",
+            "wasm-log-plugin",
         ])
         .status();
     match status {

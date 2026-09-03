@@ -967,6 +967,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "hybrid-http-gateway"
+version = "0.1.0"
+dependencies = [
+ "cordis-core",
+ "cordis-loader",
+ "cordis-logger",
+ "cordis-wasm",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2438,6 +2451,14 @@ checksum = "e974fe6821a8cf64575d51ea2194e2c8f77e7b66e9afe7419ce8a97f9ee0d251"
 dependencies = [
  "leb128fmt",
  "wasmparser 0.258.0",
+]
+
+[[package]]
+name = "wasm-log-plugin"
+version = "0.1.0"
+dependencies = [
+ "cordis-guest",
+ "serde",
 ]
 
 [[package]]
