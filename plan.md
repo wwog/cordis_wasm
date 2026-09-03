@@ -121,36 +121,7 @@ Coeffect 的工程形式是 `(key -> realm -> provider/value)` 两级寻址：
 
 建议最终工作区：
 
-```text
-cordis_wasm/
-├── Cargo.toml
-├── rust-toolchain.toml
-├── crates/
-│   ├── cordis/                 # facade，重导出常用 API 与宏
-│   ├── cordis-core/            # Context/Fiber/effect/coeffect/registry/events
-│   ├── cordis-macros/          # procedural macros + compile-time diagnostics
-│   ├── cordis-wasm/            # Wasmtime host、WIT bindings、WASM endpoint
-│   ├── cordis-guest/           # Rust guest SDK、guest-side macros/runtime
-│   ├── cordis-loader/          # Entry Tree、Group、reconcile
-│   ├── cordis-include/         # JSON/YAML、patch、写回
-│   ├── cordis-hmr/             # watcher、artifact cache、事务 reload
-│   ├── cordis-timer/           # timer service
-│   ├── cordis-logger/          # tracing exporter/console adapter
-│   └── cordis-cli/             # run/check/inspect/build-component
-├── wit/
-│   ├── cordis-plugin.wit       # host/guest kernel ABI
-│   └── deps/                   # 版本化 WIT dependencies
-├── examples/
-│   ├── native-counter/
-│   ├── wasm-counter-provider/
-│   ├── wasm-counter-consumer/
-│   └── hot-reload/
-├── tests/
-│   ├── fixtures/               # 预构建或测试时构建的 components
-│   ├── parity/                 # TS 行为移植
-│   └── state-machine/          # 属性测试
-└── xtask/                      # guest 构建、componentize、fixture 生成
-```
+参考实际
 
 `cordis-core` 不直接依赖 Wasmtime，确保内核可单独测试并允许其他 embedder。`cordis-wasm` 只实现 `ComponentFactory/ComponentInstance` 适配层。
 
@@ -1053,7 +1024,3 @@ write = []
 - Rust 1.98.0：<https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/>
 - Rust 2024 Edition：<https://doc.rust-lang.org/book/appendix-05-editions.html>
 - 当前依赖版本查询：<https://docs.rs/>
-
-## 22. 下一步
-
-按此计划开始实现时，第一批提交应严格只做 Phase 0：workspace/CI、Kernel WIT spike、effect/resource cleanup spike、waterfall reentrancy spike 和行为追踪表。不要先大面积写业务 API；WASM 重入与资源析构验证结果会直接决定事件 ABI 和 `ComponentInstance` trait 的最终形状。
