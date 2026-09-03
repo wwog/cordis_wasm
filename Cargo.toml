@@ -20,7 +20,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-repository = "https://github.com/cordiverse/cordis"
+repository = "https://github.com/wwog/cordis_wasm"
+readme = "README.md"
 
 [workspace.dependencies]
 futures = "0.3.31"
@@ -38,7 +39,7 @@ serde-saphyr = "1.2"
 syn = { version = "2", features = ["full", "extra-traits"] }
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "test-util"] }
+tokio = { version = "1.53.1", default-features = false }
 tracing = "0.1"
 trybuild = "1"
 wasmtime = { version = "48.0.1", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }

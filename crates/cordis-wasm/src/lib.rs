@@ -10,7 +10,10 @@ pub use hmr::{
     ArtifactCache, ArtifactHash, CacheMetrics, CompiledArtifact, EntryReload, FiberReloadRuntime,
     HmrError, HmrFuture, HmrManager, HmrWatcher, ReloadReport, ReloadRuntime, ReloadStatus,
 };
-pub use loader::{CheckReport, WasmApplication, WasmEntryDriver, check_entries};
+pub use loader::{
+    BuiltinRegistry, CheckReport, WasmApplication, WasmEntryDriver, check_entries,
+    check_entries_with_builtins,
+};
 pub use runtime::{ArtifactPolicy, GuestTaskGroup, WasmComponentFactory};
 
 use wasmtime::component::Component;
@@ -19,7 +22,7 @@ use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder};
 /// Generated host and guest types for the versioned Cordis kernel world.
 pub mod bindings {
     wasmtime::component::bindgen!({
-        path: "../../wit",
+        path: "wit",
         world: "cordis-plugin",
         imports: { default: async | trappable },
         exports: { default: async },
@@ -223,6 +226,14 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use wasmtime::component::Linker;
+
+    #[test]
+    fn packaged_host_wit_matches_the_guest_canonical_source() {
+        assert_eq!(
+            include_str!("../../cordis-guest/wit/kernel.wit"),
+            include_str!("../wit/kernel.wit")
+        );
+    }
 
     const HOST_IMPORT_COMPONENT: &str = r#"
         (component

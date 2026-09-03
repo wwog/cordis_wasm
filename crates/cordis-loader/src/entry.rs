@@ -151,6 +151,10 @@ impl ResolvedEntry {
     }
 }
 
+/// Executes one Entry operation atomically.
+///
+/// A method returning an error must leave the runtime in its pre-call state. [`EntryTree`] uses
+/// that guarantee to roll back earlier successful operations when a later operation fails.
 pub trait EntryDriver: Send + Sync + 'static {
     fn start<'a>(&'a self, entry: &'a ResolvedEntry) -> LoaderFuture<'a, ()>;
     fn update<'a>(
@@ -170,12 +174,12 @@ pub struct EntryTree<D> {
 
 #[derive(Debug)]
 enum AppliedChange {
-    Stopped(ResolvedEntry),
+    Stopped(Box<ResolvedEntry>),
     Updated {
-        previous: ResolvedEntry,
-        next: ResolvedEntry,
+        previous: Box<ResolvedEntry>,
+        next: Box<ResolvedEntry>,
     },
-    Started(ResolvedEntry),
+    Started(Box<ResolvedEntry>),
 }
 
 impl<D> std::fmt::Debug for EntryTree<D> {
@@ -238,7 +242,7 @@ impl<D: EntryDriver> EntryTree<D> {
             if let Err(error) = self.driver.stop(entry).await {
                 return Err(self.rollback_error(error, &applied).await);
             }
-            applied.push(AppliedChange::Stopped(entry.clone()));
+            applied.push(AppliedChange::Stopped(Box::new(entry.clone())));
         }
 
         let mut updates = next
@@ -255,8 +259,8 @@ impl<D: EntryDriver> EntryTree<D> {
                 return Err(self.rollback_error(error, &applied).await);
             }
             applied.push(AppliedChange::Updated {
-                previous: old.clone(),
-                next: new.clone(),
+                previous: Box::new(old.clone()),
+                next: Box::new(new.clone()),
             });
         }
 
@@ -276,7 +280,7 @@ impl<D: EntryDriver> EntryTree<D> {
             if let Err(error) = self.driver.start(entry).await {
                 return Err(self.rollback_error(error, &applied).await);
             }
-            applied.push(AppliedChange::Started(entry.clone()));
+            applied.push(AppliedChange::Started(Box::new(entry.clone())));
         }
 
         self.roots = roots;
@@ -292,11 +296,11 @@ impl<D: EntryDriver> EntryTree<D> {
         let mut failures = Vec::new();
         for change in applied.iter().rev() {
             let result = match change {
-                AppliedChange::Stopped(entry) => self.driver.start(entry).await,
+                AppliedChange::Stopped(entry) => self.driver.start(entry.as_ref()).await,
                 AppliedChange::Updated { previous, next } => {
-                    self.driver.update(next, previous).await
+                    self.driver.update(next.as_ref(), previous.as_ref()).await
                 }
-                AppliedChange::Started(entry) => self.driver.stop(entry).await,
+                AppliedChange::Started(entry) => self.driver.stop(entry.as_ref()).await,
             };
             if let Err(error) = result {
                 failures.push(error.to_string());
@@ -662,7 +666,8 @@ mod tests {
             *self.fail_once.lock().unwrap() = Some(operation.to_owned());
         }
 
-        fn record(&self, operation: String) -> Result<(), LoaderError> {
+        fn record(&self, operation: impl Into<String>) -> Result<(), LoaderError> {
+            let operation = operation.into();
             self.events.lock().unwrap().push(operation.clone());
             let should_fail = self.fail_once.lock().unwrap().as_deref() == Some(&operation);
             if should_fail {

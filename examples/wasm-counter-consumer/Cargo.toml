@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-cordis-guest = { path = "../../crates/cordis-guest" }
+cordis-guest = { path = "../../crates/cordis-guest", version = "0.1.0" }
 
 [lints]
 workspace = true

@@ -130,7 +130,7 @@ async fn run(config: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let (watch_commands, watch_command_receiver) = std::sync::mpsc::channel();
     let (sender, mut events) = tokio::sync::mpsc::channel(8);
     let watcher_thread = std::thread::spawn(move || {
-        watch_loop(watcher, watch_command_receiver, sender);
+        watch_loop(watcher, &watch_command_receiver, &sender);
     });
 
     loop {
@@ -190,8 +190,8 @@ enum WatchCommand {
 
 fn watch_loop(
     mut watcher: HmrWatcher,
-    commands: std::sync::mpsc::Receiver<WatchCommand>,
-    sender: tokio::sync::mpsc::Sender<Vec<PathBuf>>,
+    commands: &std::sync::mpsc::Receiver<WatchCommand>,
+    sender: &tokio::sync::mpsc::Sender<Vec<PathBuf>>,
 ) {
     loop {
         match commands.try_recv() {

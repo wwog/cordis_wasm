@@ -1,4 +1,8 @@
 //! Structured logging, bounded history, and effect-owned exporters.
+//!
+//! This is deliberately a parallel application logging service, not a `tracing-subscriber`
+//! implementation. Runtime adapters may emit the same event to both systems, while installing a
+//! subscriber that feeds records back into [`Logger`] would risk recursion and duplicate delivery.
 
 use cordis_core::{CordisError, Disposer, EffectScope, FiberId};
 use std::collections::{BTreeMap, VecDeque};

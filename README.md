@@ -4,7 +4,7 @@
 >
 > 本项目是 [Cordis TypeScript 实现](https://github.com/cordiverse/cordis)（`cordis@4.0.0-rc.9`）的 Rust 原生重写，语义对齐、开发体验对齐，但不承诺二进制兼容 TS 插件。理论依据是论文 *A Programming Paradigm for Spatiotemporal Composability*（arXiv:2608.25512）。
 >
-> **状态：开发中（0.1.0-dev）。** Phase 1–5（内核、native 宏、Wasmtime 动态插件、Loader/Include、WASM HMR）已落地并通过测试。API 尚未冻结，下文示例不代表最终形态。
+> **状态：0.1.0 发布候选。** Phase 1–6 的代码与本地门禁已落地；正式发布仍以 release commit 的跨平台、Miri 与依赖安全 CI 全绿为准。
 
 
 **保证语义的部分在框架里，而不在插件代码里**：
@@ -14,7 +14,7 @@
 - 依赖环在加载前就被 SCC 诊断发现，不会死锁等待；
 - WASM 插件调用 `provide/listen/timer` 时，host binding 自动把 effect 归属到当前 Fiber，guest 丢了句柄也由 host 强制清理。
 
-动态加载、沙箱与 HMR 分别由 `cordis-wasm`、`cordis-loader` 和 `cordis-wasm::hmr` 实现；设计校准与边界说明见 [Phase 3–5 implementation notes](docs/phases-3-5.md)。
+动态加载、沙箱与 HMR 分别由 `cordis-wasm`、`cordis-loader` 和 `cordis-wasm::hmr` 实现；设计校准与边界说明见 [Phase 3–5 implementation notes](https://github.com/wwog/cordis_wasm/blob/master/docs/phases-3-5.md)。
 
 ### 和"普通 DI 容器"的区别
 
@@ -52,13 +52,20 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 - **guest 不可信假设**：host effect 表是最终权威，Wasmtime spike 已确认 guest 遗失句柄时 Store drop 不会触发析构，因此清理不依赖 guest 善意。
 - **失败即回滚**：Fiber `apply` 失败进入 `Failed` 并回滚已完成 effects；HMR 用事务流程替换组件，失败从旧 artifact 重建。
 - **声明式运行闭环**：`WasmEntryDriver` 将 Loader Entry、managed realm、动态 Fiber、Kernel 路由和 HMR 绑定为同一生命周期；`cordis check` 只预检，`run` 才激活组件。
+- **配置与 artifact 热更新**：`cordis run` 同时监听配置和已挂载 Component；配置 diff 是可逆批事务，失败保留上一棵 Entry Tree。
+- **内置组件显式注册**：嵌入方通过 `BuiltinRegistry` 绑定 `builtin:<name>`；内置与 WASM 共用 `ComponentFactory` 和 Supervisor 生命周期，但不进入 artifact HMR。
 
 ## 文档
 
-- [plan.md](plan.md)：完整架构研究稿与分阶段实现计划
-- [TODO.md](TODO.md)：执行清单与当前进度
-- [docs/wasmtime-findings.md](docs/wasmtime-findings.md)：Wasmtime 48 的实测结论（重入、取消、资源析构）
-- [docs/phases-3-5.md](docs/phases-3-5.md)：Phase 3–5 的实现边界、纠偏结论与失败语义
+- [plan.md](https://github.com/wwog/cordis_wasm/blob/master/plan.md)：完整架构研究稿与分阶段实现计划
+- [TODO.md](https://github.com/wwog/cordis_wasm/blob/master/TODO.md)：执行清单与当前进度
+- [docs/wasmtime-findings.md](https://github.com/wwog/cordis_wasm/blob/master/docs/wasmtime-findings.md)：Wasmtime 48 的实测结论（重入、取消、资源析构）
+- [docs/phases-3-5.md](https://github.com/wwog/cordis_wasm/blob/master/docs/phases-3-5.md)：Phase 3–5 的实现边界、纠偏结论与失败语义
+- [docs/phase-6.md](https://github.com/wwog/cordis_wasm/blob/master/docs/phase-6.md)：运行时装配、CLI、Timer/Logger 与可靠性基线
+- [docs/parity.md](https://github.com/wwog/cordis_wasm/blob/master/docs/parity.md)：TypeScript 可观察行为与 Rust 语义差异
+- [docs/api-review.md](https://github.com/wwog/cordis_wasm/blob/master/docs/api-review.md)：0.1.0 public API 冻结决策
+- [docs/release-checklist.md](https://github.com/wwog/cordis_wasm/blob/master/docs/release-checklist.md)：发布门禁及当前证据
+- [docs/dependency-review.md](https://github.com/wwog/cordis_wasm/blob/master/docs/dependency-review.md)：许可证、来源与 RustSec 审计记录
 
 ## 当前进度
 
@@ -70,9 +77,9 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 | Phase 3：Wasmtime host 与 guest SDK | ✅ 已完成 |
 | Phase 4：Loader / Include | ✅ 已完成 |
 | Phase 5：WASM HMR | ✅ 已完成 |
-| Phase 6：Timer / Logger / CLI / 发布 | 未开始 |
+| Phase 6：Timer / Logger / CLI / 发布 | 发布候选，本地门禁已完成 |
 
-详细清单见 [TODO.md](TODO.md)。
+详细清单见 [TODO.md](https://github.com/wwog/cordis_wasm/blob/master/TODO.md)。
 
 ## 许可
 

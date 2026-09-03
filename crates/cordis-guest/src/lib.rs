@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 #[allow(clippy::same_length_and_capacity)]
 pub mod bindings {
     wit_bindgen::generate!({
-        path: "../../wit",
+        path: "wit",
         world: "cordis-plugin",
         pub_export_macro: true,
     });

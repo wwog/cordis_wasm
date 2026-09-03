@@ -16,8 +16,10 @@ failed construction or activation disposes it before the Fiber settles as `Faile
 replacement uses the explicit `reload_fiber` unload/load path, while `restart_fiber` retains
 its narrower meaning of retrying a failed Fiber.
 
-The Kernel ABI has one source at `wit/kernel.wit`. Both host and guest bindings are
-generated from it. Service methods are stable `u32` IDs plus MessagePack payloads and
+The authored Kernel ABI source is `crates/cordis-guest/wit/kernel.wit`. Because crates.io packages
+cannot read sibling package files, `cordis-wasm/wit/kernel.wit` is its release mirror; a host test
+requires byte-for-byte equality. Host and guest bindings are generated from their packaged copy.
+Service methods are stable `u32` IDs plus MessagePack payloads and
 ABI hashes; events carry their dispatch mode and an optional host-owned waterfall
 continuation token.
 

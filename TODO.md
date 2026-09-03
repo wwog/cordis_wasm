@@ -15,9 +15,9 @@
 ## Phase 0：风险验证与工程基线
 
 - [x] 创建 Cargo workspace、Rust 2024/1.98 工具链配置和基础 lint。
-- [ ] 创建 CI、`cargo-deny`、`cargo-audit` 与依赖更新策略。
-- [ ] 把 TypeScript 测试行为整理成 `docs/parity.md`。
-- [~] 冻结 Kernel WIT 0.1 草案并用 Wasmtime 48 bindgen 验证（草案已落盘，待 API review）。
+- [x] 创建 CI、`cargo-deny`、`cargo-audit` 与依赖更新策略。
+- [x] 把 TypeScript 测试行为整理成 `docs/parity.md`。
+- [x] 冻结 Kernel WIT 0.1 草案并用 Wasmtime 48 bindgen 验证。
 - [x] Spike：Component 加载、typed host import、guest export、Store drop。
 - [x] Spike：WIT resource destructor 与强制 cleanup；结论是 Store drop 不会析构 guest 遗失句柄，host EffectGuard 必须是权威清理表。
 - [x] Spike：fuel、epoch deadline、memory/resource limit。
@@ -97,12 +97,12 @@
 ## Phase 6：配套与发布
 
 - [x] Timer timeout/interval/sleep、Logger/console exporter、tracked collections 基础能力。
-- [ ] Timer Stream/throttle/debounce 与 Logger tracing subscriber 集成。
+- [x] Timer Stream/throttle/debounce；Logger 经 API review 明确为与 `tracing` 平行的服务，不安装反向 subscriber。
 - [x] Loader → Wasmtime → Supervisor → HMR 运行时装配与声明式双 guest 示例。
 - [x] `cordis run/check/inspect/build-component`。
-- [ ] 属性测试、故障注入、Miri/Loom、跨平台 CI。
+- [~] 属性测试、故障注入、Miri/Loom、跨平台 CI（属性/故障/Miri 本地通过，Loom 经审计不适用；待远端跨平台结果）。
 - [x] Fiber 状态机确定性生成序列不变式测试（128 seeds × 256 operations）。
 - [x] MSRV 1.98、Linux/macOS/Windows、fmt/Clippy/rustdoc/真实 WASM E2E CI 基线。
-- [ ] benchmark 后实施有数据支撑的优化。
-- [ ] API review、文档、示例和 `0.1.0` 发布检查。
+- [x] 建立 lifecycle/Context benchmark 基线；0.1.0 未引入优化型 public knobs。
+- [~] API review、文档、示例和 `0.1.0` 发布检查（本地门禁通过；待 crates.io 命名空间决策与远端 release CI）。
 - [x] 首轮 public API 审计与 `0.1.0` 阻塞项清单。

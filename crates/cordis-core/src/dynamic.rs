@@ -232,9 +232,7 @@ impl InstanceHost {
         let (guard, scope) = self.effects.effect(label)?;
         let result = match registration {
             ResolvedRegistration::Provide(key) => {
-                self.kernel
-                    .provide_service(self.fiber, key, scope)
-                    .await
+                self.kernel.provide_service(self.fiber, key, scope).await
             }
             ResolvedRegistration::Listen {
                 event,

@@ -83,7 +83,7 @@ impl<T> Debouncer<T> {
     ///
     /// Returns [`TimerError::ContextDisposed`] after cancellation begins.
     pub fn call(&self, value: T) -> Result<(), TimerError> {
-        schedule_latest(&self.effect, &self.pending, &self.changed, value)
+        schedule_latest(self.effect.as_ref(), &self.pending, &self.changed, value)
     }
 
     /// Cancels the scheduler and drops any pending value.
@@ -128,7 +128,7 @@ impl<T> Throttler<T> {
     ///
     /// Returns [`TimerError::ContextDisposed`] after cancellation begins.
     pub fn call(&self, value: T) -> Result<(), TimerError> {
-        schedule_latest(&self.effect, &self.pending, &self.changed, value)
+        schedule_latest(self.effect.as_ref(), &self.pending, &self.changed, value)
     }
 
     /// Cancels the scheduler and drops any pending value.
@@ -379,12 +379,12 @@ fn spawn_owned(
 }
 
 fn schedule_latest<T>(
-    effect: &Option<EffectGuard>,
+    effect: Option<&EffectGuard>,
     pending: &Mutex<Option<T>>,
     changed: &tokio::sync::Notify,
     value: T,
 ) -> Result<(), TimerError> {
-    if !effect.as_ref().is_some_and(EffectGuard::is_armed) {
+    if !effect.is_some_and(EffectGuard::is_armed) {
         return Err(TimerError::ContextDisposed);
     }
     pending

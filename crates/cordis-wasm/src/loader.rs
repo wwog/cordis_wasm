@@ -15,7 +15,7 @@ use cordis_loader::{
 };
 use cordis_logger::{LogLevel, Logger};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex as SyncMutex, RwLock};
 use tokio::sync::Mutex;
 
@@ -304,14 +304,14 @@ impl std::fmt::Debug for WasmEntryDriver {
 impl WasmEntryDriver {
     fn new(
         runtime: RuntimeHandle,
-        root: FiberId,
-        root_context: Context,
+        root: (FiberId, Context),
         base_dir: PathBuf,
         builtins: BuiltinRegistry,
         engine: WasmEngine,
         limits: WasmLimits,
         policy: ArtifactPolicy,
     ) -> Arc<Self> {
+        let (root, root_context) = root;
         let kernel = Arc::new(RuntimeKernel::new(runtime.clone()));
         let reload = Arc::new(FiberReloadRuntime::default());
         let hmr = HmrManager::new(engine, limits, policy, reload.clone(), HMR_CACHE_CAPACITY);
@@ -624,8 +624,7 @@ impl WasmApplication {
         let root_context = Context::root(root);
         let driver = WasmEntryDriver::new(
             handle,
-            root,
-            root_context,
+            (root, root_context),
             base_dir.into(),
             builtins,
             engine,
@@ -839,10 +838,80 @@ fn driver_error(error: impl std::fmt::Display) -> LoaderError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cordis_core::{
+        Capability, ComponentInstance, DynamicComponentDescriptor, InjectSpec, InstanceHost,
+    };
     use cordis_loader::IsolationRule;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    fn guest_entries(fixtures: &Path) -> Result<Vec<EntrySpec>, LoaderError> {
+    struct FixtureBuiltin {
+        descriptor: DynamicComponentDescriptor,
+        activations: Arc<AtomicUsize>,
+        deactivations: Arc<AtomicUsize>,
+    }
+
+    impl FixtureBuiltin {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                descriptor: DynamicComponentDescriptor {
+                    name: "fixture.builtin".into(),
+                    version: "0.1.0".into(),
+                    kernel_abi: "0.1".into(),
+                    injects: Vec::<InjectSpec>::new(),
+                    provides: Vec::new(),
+                    config_schema: true.into(),
+                    capabilities: BTreeSet::<Capability>::new(),
+                },
+                activations: Arc::new(AtomicUsize::new(0)),
+                deactivations: Arc::new(AtomicUsize::new(0)),
+            })
+        }
+    }
+
+    impl ComponentFactory for FixtureBuiltin {
+        fn descriptor(&self) -> &DynamicComponentDescriptor {
+            &self.descriptor
+        }
+
+        fn instantiate(&self, _: InstanceHost) -> ComponentFuture<'_, Box<dyn ComponentInstance>> {
+            let activations = self.activations.clone();
+            let deactivations = self.deactivations.clone();
+            Box::pin(async move {
+                Ok(Box::new(FixtureInstance {
+                    activations,
+                    deactivations,
+                }) as Box<dyn ComponentInstance>)
+            })
+        }
+    }
+
+    struct FixtureInstance {
+        activations: Arc<AtomicUsize>,
+        deactivations: Arc<AtomicUsize>,
+    }
+
+    impl ComponentInstance for FixtureInstance {
+        fn activate(&mut self, _: serde_json::Value) -> ComponentFuture<'_, ()> {
+            self.activations.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn deactivate(&mut self) -> ComponentFuture<'_, ()> {
+            self.deactivations.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn call_service(&mut self, call: DynamicCall) -> ComponentFuture<'_, Vec<u8>> {
+            Box::pin(async move { Ok(call.payload) })
+        }
+
+        fn call_event(&mut self, call: EventCall) -> ComponentFuture<'_, EventReply> {
+            Box::pin(async move { Ok(EventReply::Continue(call.payload)) })
+        }
+    }
+
+    fn guest_entries(fixtures: &std::path::Path) -> Result<Vec<EntrySpec>, LoaderError> {
         let mut provider = EntrySpec::leaf(
             "provider",
             format!(
@@ -909,5 +978,44 @@ mod tests {
                 .all(|fiber| fiber.state == FiberState::Disposed)
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn registered_builtin_preflights_mounts_and_stops_without_hmr_artifact() {
+        let factory = FixtureBuiltin::new();
+        let builtins = BuiltinRegistry::default();
+        builtins.register("fixture", factory.clone()).unwrap();
+        assert!(builtins.register("fixture", factory.clone()).is_err());
+        let entries = vec![EntrySpec::leaf("builtin", "builtin:fixture").unwrap()];
+
+        let report = check_entries_with_builtins(
+            ".",
+            entries.clone(),
+            WasmLimits::default(),
+            ArtifactPolicy::default(),
+            builtins.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.entries, 1);
+        assert_eq!(
+            report.components,
+            BTreeSet::from(["fixture.builtin".into()])
+        );
+
+        let mut application = WasmApplication::new_with_builtins(
+            ".",
+            WasmLimits::default(),
+            ArtifactPolicy::default(),
+            builtins,
+        )
+        .await
+        .unwrap();
+        application.reconcile(entries).await.unwrap();
+        application.settle().await.unwrap();
+        assert_eq!(factory.activations.load(Ordering::SeqCst), 1);
+        assert!(application.driver().artifact_paths().await.is_empty());
+        application.shutdown().await.unwrap();
+        assert_eq!(factory.deactivations.load(Ordering::SeqCst), 1);
     }
 }
