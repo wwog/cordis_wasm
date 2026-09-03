@@ -1659,4 +1659,103 @@ mod tests {
         assert_eq!(snapshot.fibers[0].state, FiberState::Active);
         assert!(snapshot.fibers[0].failure.is_none());
     }
+
+    /// Paper §4.3.5 (Confluence, Theorem 80): the lifecycle relation is confluent, and the
+    /// normal form it converges on is the statically assembled one. Whatever sequence of
+    /// activations and deactivations a running system has been through, the state it quiesces
+    /// at is the one the same insertions and retirements would have produced had each
+    /// component that ends up active been loaded once, in dependency order, and never unloaded.
+    ///
+    /// Two runtimes reach the same final configuration; one loads it directly, the other
+    /// forces the consumer through a retire/re-introduce churn of its provider. Both must
+    /// quiesce to the same Active set and the same provider mapping.
+    #[tokio::test]
+    async fn quiescent_state_is_a_function_of_the_final_configuration_not_the_schedule() {
+        let database = service("database");
+
+        // Direct load: provide, then activate the consumer once.
+        let direct = Runtime::start();
+        let direct_handle = direct.handle();
+        let direct_realm = direct_handle.allocate_realm().await.unwrap();
+        let provider = direct_handle.create_fiber(None).await.unwrap();
+        let consumer = direct_handle.create_fiber(None).await.unwrap();
+        direct_handle
+            .provide(ProviderKey::new(database.clone(), direct_realm), provider)
+            .await
+            .unwrap();
+        activate(
+            &direct_handle,
+            consumer,
+            Context::root(consumer).isolate(database.clone(), direct_realm),
+            vec![InjectSpec::required(database.clone())],
+        )
+        .await;
+        let direct_snapshot = direct.shutdown().await.unwrap();
+
+        // Churn load: activate the consumer, then withdraw the provider's binding (forcing the
+        // consumer to unload reactively), then reintroduce it (triggering the consumer's reload).
+        // `withdraw`/`provide` are reversible coeffect operations, so unlike `retire` they do
+        // not permanently mark the provider, and both fibers end Active.
+        let churn = Runtime::start();
+        let churn_handle = churn.handle();
+        let churn_realm = churn_handle.allocate_realm().await.unwrap();
+        let provider = churn_handle.create_fiber(None).await.unwrap();
+        let consumer = churn_handle.create_fiber(None).await.unwrap();
+        let key = ProviderKey::new(database.clone(), churn_realm);
+        churn_handle.provide(key.clone(), provider).await.unwrap();
+        activate(
+            &churn_handle,
+            consumer,
+            Context::root(consumer).isolate(database.clone(), churn_realm),
+            vec![InjectSpec::required(database.clone())],
+        )
+        .await;
+        let change = churn_handle.withdraw(key.clone(), provider).await.unwrap();
+        assert_eq!(change.affected, vec![consumer]);
+        assert_eq!(change.transitions.len(), 1);
+        let unload = change.transitions[0].clone();
+        churn_handle
+            .complete_transition(consumer, unload.generation, Ok(()))
+            .await
+            .unwrap();
+        // Reintroducing the binding recomputes the consumer's resolution and schedules its
+        // reload, so `provide` alone drives the consumer back to Active.
+        let change = churn_handle.provide(key, provider).await.unwrap();
+        assert_eq!(change.affected, vec![consumer]);
+        assert_eq!(change.transitions.len(), 1);
+        let load = change.transitions[0].clone();
+        churn_handle.commit_dependencies(consumer).await.unwrap();
+        churn_handle
+            .complete_transition(consumer, load.generation, Ok(()))
+            .await
+            .unwrap();
+        let churn_snapshot = churn.shutdown().await.unwrap();
+
+        // Quiescence is independent of the schedule. FiberIds are process-global and differ
+        // across the two runtimes, so compare structure, not identity: each runtime has exactly
+        // one Active fiber (the consumer), that consumer's committed view resolves its required
+        // dependency, and exactly one provider binding is installed. The provider fiber itself
+        // is never activated (it has no configured dependencies), so it stays Pending — only its
+        // binding slot is occupied; that is the same in both schedules.
+        let assert_quiescent = |snapshot: &RuntimeSnapshot| {
+            let active = snapshot
+                .fibers
+                .iter()
+                .filter(|fiber| fiber.state == FiberState::Active)
+                .collect::<Vec<_>>();
+            assert_eq!(active.len(), 1, "exactly the consumer is active");
+            let consumer = active[0];
+            assert!(
+                consumer
+                    .committed
+                    .as_ref()
+                    .and_then(|view| view.lookup(&database).ok().flatten())
+                    .is_some(),
+                "the consumer commits a provider binding"
+            );
+            assert_eq!(snapshot.provider_count, 1);
+        };
+        assert_quiescent(&direct_snapshot);
+        assert_quiescent(&churn_snapshot);
+    }
 }

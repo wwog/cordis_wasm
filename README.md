@@ -63,6 +63,7 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 - [docs/phases-3-5.md](https://github.com/wwog/cordis_wasm/blob/master/docs/phases-3-5.md)：Phase 3–5 的实现边界、纠偏结论与失败语义
 - [docs/phase-6.md](https://github.com/wwog/cordis_wasm/blob/master/docs/phase-6.md)：运行时装配、CLI、Timer/Logger 与可靠性基线
 - [docs/parity.md](https://github.com/wwog/cordis_wasm/blob/master/docs/parity.md)：TypeScript 可观察行为与 Rust 语义差异
+- [docs/semantics.md](https://github.com/wwog/cordis_wasm/blob/master/docs/semantics.md)：论文 `2608.25512` 理论构造与实现的对照表
 - [docs/api-review.md](https://github.com/wwog/cordis_wasm/blob/master/docs/api-review.md)：0.1.0 public API 冻结决策
 - [docs/release-checklist.md](https://github.com/wwog/cordis_wasm/blob/master/docs/release-checklist.md)：发布门禁及当前证据
 - [docs/dependency-review.md](https://github.com/wwog/cordis_wasm/blob/master/docs/dependency-review.md)：许可证、来源与 RustSec 审计记录
