@@ -112,7 +112,6 @@ Coeffect 的工程形式是 `(key -> realm -> provider/value)` 两级寻址：
 
 ### 3.3 第一版明确不做
 
-- 不加载 Rust `cdylib`，不依赖 `libloading`；这会引入 Rust ABI 不稳定、allocator/panic 边界和卸载安全问题；
 - 不执行 JavaScript/TypeScript 插件；
 - 不承诺二进制兼容 Cordis TS 插件；目标是语义和开发体验对齐；
 - 不把未通过 Context/WIT import 的宿主全局副作用宣称为可逆；文件写入、外部 API 调用等仍需事务或补偿语义；

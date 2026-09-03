@@ -55,32 +55,15 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 - **配置与 artifact 热更新**：`cordis run` 同时监听配置和已挂载 Component；配置 diff 是可逆批事务，失败保留上一棵 Entry Tree。
 - **内置组件显式注册**：嵌入方通过 `BuiltinRegistry` 绑定 `builtin:<name>`；内置与 WASM 共用 `ComponentFactory` 和 Supervisor 生命周期，但不进入 artifact HMR。
 
-## 文档
+## 实施规则
 
-- [plan.md](https://github.com/wwog/cordis_wasm/blob/master/plan.md)：完整架构研究稿与分阶段实现计划
-- [TODO.md](https://github.com/wwog/cordis_wasm/blob/master/TODO.md)：执行清单与当前进度
-- [docs/wasmtime-findings.md](https://github.com/wwog/cordis_wasm/blob/master/docs/wasmtime-findings.md)：Wasmtime 48 的实测结论（重入、取消、资源析构）
-- [docs/phases-3-5.md](https://github.com/wwog/cordis_wasm/blob/master/docs/phases-3-5.md)：Phase 3–5 的实现边界、纠偏结论与失败语义
-- [docs/phase-6.md](https://github.com/wwog/cordis_wasm/blob/master/docs/phase-6.md)：运行时装配、CLI、Timer/Logger 与可靠性基线
-- [docs/parity.md](https://github.com/wwog/cordis_wasm/blob/master/docs/parity.md)：TypeScript 可观察行为与 Rust 语义差异
-- [docs/semantics.md](https://github.com/wwog/cordis_wasm/blob/master/docs/semantics.md)：论文 `2608.25512` 理论构造与实现的对照表
-- [docs/api-review.md](https://github.com/wwog/cordis_wasm/blob/master/docs/api-review.md)：0.1.0 public API 冻结决策
-- [docs/release-checklist.md](https://github.com/wwog/cordis_wasm/blob/master/docs/release-checklist.md)：发布门禁及当前证据
-- [docs/dependency-review.md](https://github.com/wwog/cordis_wasm/blob/master/docs/dependency-review.md)：许可证、来源与 RustSec 审计记录
-
-## 当前进度
-
-| 阶段 | 状态 |
-|---|---|
-| Phase 0：Wasmtime 风险验证 | 核心 spikes 已完成 |
-| Phase 1：cordis-core（Fiber / effect / service / 事件） | ✅ 完成 |
-| Phase 2：宏与 native 组件体验 | ✅ 完成 |
-| Phase 3：Wasmtime host 与 guest SDK | ✅ 已完成 |
-| Phase 4：Loader / Include | ✅ 已完成 |
-| Phase 5：WASM HMR | ✅ 已完成 |
-| Phase 6：Timer / Logger / CLI / 发布 | 发布候选，本地门禁已完成 |
-
-详细清单见 [TODO.md](https://github.com/wwog/cordis_wasm/blob/master/TODO.md)。
+- 优先选择最小、直接、可测试的实现；没有明确收益时不增加抽象层。
+- 状态变化必须有唯一入口，不用多个布尔值表达同一状态。
+- 公共 API 不使用含义不明的 `bool` 参数，改用 enum 或具名 options。
+- 不跨 `.await` 持有同步锁；不在 Supervisor 内执行用户代码。
+- 优化必须由复杂度、内存或基准数据支撑；先保证语义，再加 fast path。
+- 动态插件走 Wasmtime Component Model；
+- 每完成一项同时补测试和文档，不积累“最后再测”的任务。
 
 ## 许可
 
