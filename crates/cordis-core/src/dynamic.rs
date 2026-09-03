@@ -75,6 +75,15 @@ pub enum RegistrationRequest {
     },
 }
 
+enum ResolvedRegistration {
+    Provide(crate::ProviderKey),
+    Listen {
+        event: EventId,
+        listener_id: u64,
+        mode: EventMode,
+    },
+}
+
 /// Host-side operations available to a dynamic component instance.
 pub trait KernelHost: Send + Sync + 'static {
     fn log(&self, fiber: FiberId, level: &str, message: &str);
@@ -83,12 +92,21 @@ pub trait KernelHost: Send + Sync + 'static {
 
     fn dispatch_event(&self, fiber: FiberId, call: EventCall) -> ComponentFuture<'_, EventReply>;
 
-    /// Registers the host-side inverse in `scope` before returning success.
-    fn register(
+    /// Provides a resolved service key and installs its inverse in `scope`.
+    fn provide_service(
         &self,
         fiber: FiberId,
-        request: RegistrationRequest,
-        realm: Option<crate::RealmId>,
+        key: crate::ProviderKey,
+        scope: EffectScope,
+    ) -> ComponentFuture<'_, ()>;
+
+    /// Registers an event listener and installs its inverse in `scope`.
+    fn register_listener(
+        &self,
+        fiber: FiberId,
+        event: EventId,
+        listener_id: u64,
+        mode: EventMode,
         scope: EffectScope,
     ) -> ComponentFuture<'_, ()>;
 }
@@ -189,19 +207,46 @@ impl InstanceHost {
     ///
     /// Returns an inactive-effect or Kernel registration error.
     pub async fn register(&self, request: RegistrationRequest) -> Result<EffectGuard, CordisError> {
-        let (label, realm) = match &request {
-            RegistrationRequest::Provide(service) => (
-                format!("provide:{}", service.name()),
-                Some(self.context.resolve_realm(service)?),
+        let (label, registration) = match request {
+            RegistrationRequest::Provide(service) => {
+                let label = format!("provide:{}", service.name());
+                let realm = self.context.resolve_realm(&service)?;
+                (
+                    label,
+                    ResolvedRegistration::Provide(crate::ProviderKey::new(service, realm)),
+                )
+            }
+            RegistrationRequest::Listen {
+                event,
+                listener_id,
+                mode,
+            } => (
+                format!("listen:{}", event.name()),
+                ResolvedRegistration::Listen {
+                    event,
+                    listener_id,
+                    mode,
+                },
             ),
-            RegistrationRequest::Listen { event, .. } => (format!("listen:{}", event.name()), None),
         };
         let (guard, scope) = self.effects.effect(label)?;
-        if let Err(error) = self
-            .kernel
-            .register(self.fiber, request, realm, scope)
-            .await
-        {
+        let result = match registration {
+            ResolvedRegistration::Provide(key) => {
+                self.kernel
+                    .provide_service(self.fiber, key, scope)
+                    .await
+            }
+            ResolvedRegistration::Listen {
+                event,
+                listener_id,
+                mode,
+            } => {
+                self.kernel
+                    .register_listener(self.fiber, event, listener_id, mode, scope)
+                    .await
+            }
+        };
+        if let Err(error) = result {
             let _ = guard.dispose().await;
             return Err(error);
         }
@@ -668,11 +713,21 @@ mod tests {
             Box::pin(async move { Ok(EventReply::Continue(call.payload)) })
         }
 
-        fn register(
+        fn provide_service(
             &self,
             _: FiberId,
-            _: RegistrationRequest,
-            _: Option<crate::RealmId>,
+            _: crate::ProviderKey,
+            _: EffectScope,
+        ) -> ComponentFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn register_listener(
+            &self,
+            _: FiberId,
+            _: EventId,
+            _: u64,
+            _: EventMode,
             _: EffectScope,
         ) -> ComponentFuture<'_, ()> {
             Box::pin(async { Ok(()) })

@@ -927,11 +927,29 @@ mod tests {
             Box::pin(async move { Ok(EventReply::Continue(call.payload)) })
         }
 
-        fn register(
+        fn provide_service(
             &self,
             _: cordis_core::FiberId,
-            _: RegistrationRequest,
-            _: Option<cordis_core::RealmId>,
+            _: cordis_core::ProviderKey,
+            scope: EffectScope,
+        ) -> ComponentFuture<'_, ()> {
+            let registrations = self.active_registrations.clone();
+            Box::pin(async move {
+                registrations.fetch_add(1, Ordering::SeqCst);
+                scope.defer(Disposer::new(move || async move {
+                    registrations.fetch_sub(1, Ordering::SeqCst);
+                    Ok(())
+                }))?;
+                Ok(())
+            })
+        }
+
+        fn register_listener(
+            &self,
+            _: cordis_core::FiberId,
+            _: cordis_core::EventId,
+            _: u64,
+            _: cordis_core::EventMode,
             scope: EffectScope,
         ) -> ComponentFuture<'_, ()> {
             let registrations = self.active_registrations.clone();

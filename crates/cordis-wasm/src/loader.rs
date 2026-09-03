@@ -7,7 +7,7 @@ use crate::{
 use cordis_core::{
     ComponentFactory, ComponentFuture, Context, CordisError, Disposer, DynamicCall, DynamicFiber,
     EffectScope, EventCall, EventId, EventReply, FiberId, FiberState, KernelHost, ProviderKey,
-    RealmId, RegistrationRequest, Runtime, RuntimeHandle, RuntimeSnapshot, ServiceId,
+    RealmId, Runtime, RuntimeHandle, RuntimeSnapshot, ServiceId,
 };
 use cordis_loader::{
     ComponentRef, EntryDriver, EntryId, EntrySpec, EntryTree, LoaderError, LoaderFuture,
@@ -31,6 +31,69 @@ enum RealmKey {
 #[derive(Clone, Debug)]
 struct MountedEntry {
     fiber: DynamicFiber,
+    hmr_tracked: bool,
+}
+
+/// Process-local factories addressable through `builtin:<name>` Entry references.
+#[derive(Clone, Default)]
+pub struct BuiltinRegistry {
+    factories: Arc<RwLock<BTreeMap<String, Arc<dyn ComponentFactory>>>>,
+}
+
+impl std::fmt::Debug for BuiltinRegistry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BuiltinRegistry")
+            .field(
+                "names",
+                &self
+                    .factories
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .keys()
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+impl BuiltinRegistry {
+    /// Registers one process-local component factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an empty or duplicate name.
+    pub fn register(
+        &self,
+        name: impl Into<String>,
+        factory: Arc<dyn ComponentFactory>,
+    ) -> Result<(), LoaderError> {
+        let name = name.into();
+        if name.is_empty() {
+            return Err(LoaderError::Driver(
+                "builtin component name cannot be empty".into(),
+            ));
+        }
+        let mut factories = self
+            .factories
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if factories.contains_key(&name) {
+            return Err(LoaderError::Driver(format!(
+                "builtin component `{name}` is already registered"
+            )));
+        }
+        factories.insert(name, factory);
+        Ok(())
+    }
+
+    fn get(&self, name: &str) -> Option<Arc<dyn ComponentFactory>> {
+        self.factories
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .cloned()
+    }
 }
 
 /// Concrete Kernel router shared by every dynamic Entry in one application.
@@ -157,58 +220,58 @@ impl KernelHost for RuntimeKernel {
         })
     }
 
-    fn register(
+    fn provide_service(
         &self,
         fiber: FiberId,
-        request: RegistrationRequest,
-        realm: Option<RealmId>,
+        key: ProviderKey,
         scope: EffectScope,
     ) -> ComponentFuture<'_, ()> {
         Box::pin(async move {
-            match request {
-                RegistrationRequest::Provide(service) => {
-                    let realm = realm.ok_or_else(|| CordisError::MissingRealm {
-                        service: service.clone(),
-                    })?;
-                    let key = ProviderKey::new(service, realm);
-                    self.runtime.provide(key.clone(), fiber).await?;
-                    let runtime = self.runtime.clone();
-                    let cleanup_key = key.clone();
-                    if let Err(error) = scope.defer(Disposer::new(move || async move {
-                        match runtime.withdraw(cleanup_key, fiber).await {
-                            Ok(_) | Err(CordisError::ProviderNotFound { .. }) => Ok(()),
-                            Err(error) => Err(error),
-                        }
-                    })) {
-                        let _ = self.runtime.withdraw(key, fiber).await;
-                        return Err(error);
-                    }
+            self.runtime.provide(key.clone(), fiber).await?;
+            let runtime = self.runtime.clone();
+            let cleanup_key = key.clone();
+            if let Err(error) = scope.defer(Disposer::new(move || async move {
+                match runtime.withdraw(cleanup_key, fiber).await {
+                    Ok(_) | Err(CordisError::ProviderNotFound { .. }) => Ok(()),
+                    Err(error) => Err(error),
                 }
-                RegistrationRequest::Listen {
-                    event, listener_id, ..
-                } => {
-                    let key = (event, listener_id);
-                    let mut listeners = self
-                        .listeners
-                        .write()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if listeners.contains_key(&key) {
-                        return Err(CordisError::ComponentFailed {
-                            component: key.0.to_string(),
-                            message: format!("listener {listener_id} is already registered"),
-                        });
-                    }
-                    listeners.insert(key.clone(), fiber);
-                    drop(listeners);
-                    let listeners = self.listeners.clone();
-                    scope.defer(Disposer::infallible(move || async move {
-                        listeners
-                            .write()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .remove(&key);
-                    }))?;
-                }
+            })) {
+                let _ = self.runtime.withdraw(key, fiber).await;
+                return Err(error);
             }
+            Ok(())
+        })
+    }
+
+    fn register_listener(
+        &self,
+        fiber: FiberId,
+        event: EventId,
+        listener_id: u64,
+        _: cordis_core::EventMode,
+        scope: EffectScope,
+    ) -> ComponentFuture<'_, ()> {
+        Box::pin(async move {
+            let key = (event, listener_id);
+            let mut listeners = self
+                .listeners
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if listeners.contains_key(&key) {
+                return Err(CordisError::ComponentFailed {
+                    component: key.0.to_string(),
+                    message: format!("listener {listener_id} is already registered"),
+                });
+            }
+            listeners.insert(key.clone(), fiber);
+            drop(listeners);
+            let listeners = self.listeners.clone();
+            scope.defer(Disposer::infallible(move || async move {
+                listeners
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remove(&key);
+            }))?;
             Ok(())
         })
     }
@@ -220,6 +283,7 @@ pub struct WasmEntryDriver {
     root: FiberId,
     root_context: Context,
     base_dir: PathBuf,
+    builtins: BuiltinRegistry,
     kernel: Arc<RuntimeKernel>,
     reload: Arc<FiberReloadRuntime>,
     hmr: Mutex<HmrManager<FiberReloadRuntime>>,
@@ -243,6 +307,7 @@ impl WasmEntryDriver {
         root: FiberId,
         root_context: Context,
         base_dir: PathBuf,
+        builtins: BuiltinRegistry,
         engine: WasmEngine,
         limits: WasmLimits,
         policy: ArtifactPolicy,
@@ -255,6 +320,7 @@ impl WasmEntryDriver {
             root,
             root_context,
             base_dir,
+            builtins,
             kernel,
             reload,
             hmr: Mutex::new(hmr),
@@ -278,27 +344,16 @@ impl WasmEntryDriver {
     }
 
     async fn start_entry(&self, entry: &ResolvedEntry) -> Result<(), LoaderError> {
-        let path = component_path(&self.base_dir, entry)?;
-        let bytes = std::fs::read(&path).map_err(driver_error)?;
-        let artifact = self
-            .hmr
-            .lock()
-            .await
-            .track(entry.spec.id.to_string(), path, &bytes)
-            .await
-            .map_err(driver_error)?;
-        let factory = artifact
-            .factory_arc()
-            .ok_or_else(|| LoaderError::Driver("compiled artifact has no factory".into()))?;
+        let (factory, hmr_tracked) = self.resolve_factory(entry).await?;
         if let Err(error) = validate_config(entry, factory.as_ref()) {
-            self.hmr.lock().await.untrack(entry.spec.id.as_str());
+            self.untrack_if(entry.spec.id.as_str(), hmr_tracked).await;
             return Err(error);
         }
 
         let context = match self.entry_context(entry, factory.as_ref()).await {
             Ok(context) => context,
             Err(error) => {
-                self.hmr.lock().await.untrack(entry.spec.id.as_str());
+                self.untrack_if(entry.spec.id.as_str(), hmr_tracked).await;
                 return Err(error);
             }
         };
@@ -324,21 +379,24 @@ impl WasmEntryDriver {
         {
             Ok(mounted) => mounted,
             Err(error) => {
-                self.hmr.lock().await.untrack(entry.spec.id.as_str());
+                self.untrack_if(entry.spec.id.as_str(), hmr_tracked).await;
                 return Err(driver_error(error));
             }
         };
 
         self.kernel.bind(mounted.clone());
-        self.reload.bind(
-            entry.spec.id.to_string(),
-            mounted.clone(),
-            entry.spec.config.clone(),
-        );
+        if hmr_tracked {
+            self.reload.bind(
+                entry.spec.id.to_string(),
+                mounted.clone(),
+                entry.spec.config.clone(),
+            );
+        }
         self.entries.lock().await.insert(
             entry.spec.id.clone(),
             MountedEntry {
                 fiber: mounted.clone(),
+                hmr_tracked,
             },
         );
 
@@ -364,6 +422,46 @@ impl WasmEntryDriver {
         Ok(())
     }
 
+    async fn resolve_factory(
+        &self,
+        entry: &ResolvedEntry,
+    ) -> Result<(Arc<dyn ComponentFactory>, bool), LoaderError> {
+        match entry.component.as_ref() {
+            Some(ComponentRef::Builtin(name)) => self
+                .builtins
+                .get(name)
+                .map(|factory| (factory, false))
+                .ok_or_else(|| {
+                    LoaderError::Driver(format!("builtin component `{name}` is not registered"))
+                }),
+            Some(ComponentRef::File(path)) => {
+                let path = self.base_dir.join(path);
+                let bytes = std::fs::read(&path).map_err(driver_error)?;
+                let artifact = self
+                    .hmr
+                    .lock()
+                    .await
+                    .track(entry.spec.id.to_string(), path, &bytes)
+                    .await
+                    .map_err(driver_error)?;
+                let factory = artifact.factory_arc().ok_or_else(|| {
+                    LoaderError::Driver("compiled artifact has no factory".into())
+                })?;
+                Ok((factory, true))
+            }
+            None => Err(LoaderError::Driver(format!(
+                "Entry `{}` has no component",
+                entry.spec.id
+            ))),
+        }
+    }
+
+    async fn untrack_if(&self, entry: &str, hmr_tracked: bool) {
+        if hmr_tracked {
+            self.hmr.lock().await.untrack(entry);
+        }
+    }
+
     async fn stop_entry(&self, id: &EntryId) -> Result<(), LoaderError> {
         let mounted = self
             .entries
@@ -373,23 +471,27 @@ impl WasmEntryDriver {
             .ok_or_else(|| LoaderError::Driver(format!("Entry `{id}` is not mounted")))?;
         let result = mounted.fiber.retire().await.map_err(driver_error);
         self.kernel.unbind(mounted.fiber.fiber());
-        self.reload.unbind(id.as_str());
-        self.hmr.lock().await.untrack(id.as_str());
+        if mounted.hmr_tracked {
+            self.reload.unbind(id.as_str());
+            self.hmr.lock().await.untrack(id.as_str());
+        }
         result
     }
 
     async fn remove_mount(&self, id: &EntryId) {
         if let Some(mounted) = self.entries.lock().await.remove(id) {
             self.kernel.unbind(mounted.fiber.fiber());
+            if mounted.hmr_tracked {
+                self.reload.unbind(id.as_str());
+                self.hmr.lock().await.untrack(id.as_str());
+            }
         }
-        self.reload.unbind(id.as_str());
-        self.hmr.lock().await.untrack(id.as_str());
     }
 
     async fn entry_context(
         &self,
         entry: &ResolvedEntry,
-        factory: &WasmComponentFactory,
+        factory: &dyn ComponentFactory,
     ) -> Result<Context, LoaderError> {
         let descriptor = factory.descriptor();
         let services = descriptor
@@ -458,7 +560,17 @@ impl EntryDriver for WasmEntryDriver {
     }
 
     fn stop<'a>(&'a self, entry: &'a ResolvedEntry) -> LoaderFuture<'a, ()> {
-        Box::pin(async move { self.stop_entry(&entry.spec.id).await })
+        Box::pin(async move {
+            if let Err(error) = self.stop_entry(&entry.spec.id).await {
+                return match self.start_entry(entry).await {
+                    Ok(()) => Err(error),
+                    Err(rollback) => Err(LoaderError::Driver(format!(
+                        "{error}; stop rollback failed: {rollback}"
+                    ))),
+                };
+            }
+            Ok(())
+        })
     }
 }
 
@@ -491,6 +603,20 @@ impl WasmApplication {
         limits: WasmLimits,
         policy: ArtifactPolicy,
     ) -> Result<Self, LoaderError> {
+        Self::new_with_builtins(base_dir, limits, policy, BuiltinRegistry::default()).await
+    }
+
+    /// Creates an empty application with process-local built-in factories.
+    ///
+    /// # Errors
+    ///
+    /// Returns an engine, Supervisor, or root Fiber creation error.
+    pub async fn new_with_builtins(
+        base_dir: impl Into<PathBuf>,
+        limits: WasmLimits,
+        policy: ArtifactPolicy,
+        builtins: BuiltinRegistry,
+    ) -> Result<Self, LoaderError> {
         let engine = WasmEngine::new().map_err(driver_error)?;
         let runtime = Runtime::start();
         let handle = runtime.handle();
@@ -501,6 +627,7 @@ impl WasmApplication {
             root,
             root_context,
             base_dir.into(),
+            builtins,
             engine,
             limits,
             policy,
@@ -576,23 +703,38 @@ struct PreflightDriver {
     engine: WasmEngine,
     limits: WasmLimits,
     policy: ArtifactPolicy,
+    builtins: BuiltinRegistry,
     report: SyncMutex<CheckReport>,
 }
 
 impl EntryDriver for PreflightDriver {
     fn start<'a>(&'a self, entry: &'a ResolvedEntry) -> LoaderFuture<'a, ()> {
         Box::pin(async move {
-            let path = component_path(&self.base_dir, entry)?;
-            let bytes = std::fs::read(path).map_err(driver_error)?;
-            let factory = WasmComponentFactory::from_bytes(
-                self.engine.clone(),
-                bytes,
-                self.limits.clone(),
-                self.policy.clone(),
-            )
-            .await
-            .map_err(driver_error)?;
-            validate_config(entry, &factory)?;
+            let factory: Arc<dyn ComponentFactory> = match entry.component.as_ref() {
+                Some(ComponentRef::Builtin(name)) => self.builtins.get(name).ok_or_else(|| {
+                    LoaderError::Driver(format!("builtin component `{name}` is not registered"))
+                })?,
+                Some(ComponentRef::File(path)) => {
+                    let bytes = std::fs::read(self.base_dir.join(path)).map_err(driver_error)?;
+                    Arc::new(
+                        WasmComponentFactory::from_bytes(
+                            self.engine.clone(),
+                            bytes,
+                            self.limits.clone(),
+                            self.policy.clone(),
+                        )
+                        .await
+                        .map_err(driver_error)?,
+                    )
+                }
+                None => {
+                    return Err(LoaderError::Driver(format!(
+                        "Entry `{}` has no component",
+                        entry.spec.id
+                    )));
+                }
+            };
+            validate_config(entry, factory.as_ref())?;
             let mut report = self
                 .report
                 .lock()
@@ -625,11 +767,34 @@ pub async fn check_entries(
     limits: WasmLimits,
     policy: ArtifactPolicy,
 ) -> Result<CheckReport, LoaderError> {
+    check_entries_with_builtins(
+        base_dir,
+        entries,
+        limits,
+        policy,
+        BuiltinRegistry::default(),
+    )
+    .await
+}
+
+/// Validates an Entry tree against WebAssembly artifacts and registered built-ins.
+///
+/// # Errors
+///
+/// Returns an Entry validation, artifact, ABI, capability, or config schema error.
+pub async fn check_entries_with_builtins(
+    base_dir: impl Into<PathBuf>,
+    entries: Vec<EntrySpec>,
+    limits: WasmLimits,
+    policy: ArtifactPolicy,
+    builtins: BuiltinRegistry,
+) -> Result<CheckReport, LoaderError> {
     let driver = Arc::new(PreflightDriver {
         base_dir: base_dir.into(),
         engine: WasmEngine::new().map_err(driver_error)?,
         limits,
         policy,
+        builtins,
         report: SyncMutex::new(CheckReport::default()),
     });
     let mut tree = EntryTree::new(driver.clone());
@@ -642,22 +807,9 @@ pub async fn check_entries(
     Ok(report)
 }
 
-fn component_path(base_dir: &Path, entry: &ResolvedEntry) -> Result<PathBuf, LoaderError> {
-    match entry.component.as_ref() {
-        Some(ComponentRef::File(path)) => Ok(base_dir.join(path)),
-        Some(ComponentRef::Builtin(name)) => Err(LoaderError::Driver(format!(
-            "builtin component `{name}` is not registered"
-        ))),
-        None => Err(LoaderError::Driver(format!(
-            "Entry `{}` has no component",
-            entry.spec.id
-        ))),
-    }
-}
-
 fn validate_config(
     entry: &ResolvedEntry,
-    factory: &WasmComponentFactory,
+    factory: &dyn ComponentFactory,
 ) -> Result<(), LoaderError> {
     let schema = serde_json::to_value(&factory.descriptor().config_schema).map_err(|error| {
         LoaderError::InvalidSchema {

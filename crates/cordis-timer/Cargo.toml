@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 cordis-core = { path = "../cordis-core" }
+futures.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 

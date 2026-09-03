@@ -168,6 +168,16 @@ pub struct EntryTree<D> {
     schemas: BTreeMap<String, Value>,
 }
 
+#[derive(Debug)]
+enum AppliedChange {
+    Stopped(ResolvedEntry),
+    Updated {
+        previous: ResolvedEntry,
+        next: ResolvedEntry,
+    },
+    Started(ResolvedEntry),
+}
+
 impl<D> std::fmt::Debug for EntryTree<D> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -205,7 +215,8 @@ impl<D: EntryDriver> EntryTree<D> {
     ///
     /// # Errors
     ///
-    /// Returns validation or driver errors without publishing the new tree.
+    /// Returns validation or driver errors without publishing the new tree. Successfully
+    /// applied driver operations are rolled back in reverse order if a later operation fails.
     pub async fn reconcile(&mut self, roots: Vec<EntrySpec>) -> Result<(), LoaderError> {
         let next = resolve_entries(&roots)?;
         self.validate_configs(&next)?;
@@ -222,8 +233,12 @@ impl<D: EntryDriver> EntryTree<D> {
             .cloned()
             .collect::<Vec<_>>();
         stops.sort_by_key(|entry| std::cmp::Reverse(entry.depth));
+        let mut applied = Vec::new();
         for entry in &stops {
-            self.driver.stop(entry).await?;
+            if let Err(error) = self.driver.stop(entry).await {
+                return Err(self.rollback_error(error, &applied).await);
+            }
+            applied.push(AppliedChange::Stopped(entry.clone()));
         }
 
         let mut updates = next
@@ -236,7 +251,13 @@ impl<D: EntryDriver> EntryTree<D> {
             .collect::<Vec<_>>();
         updates.sort_by_key(|(_, next)| next.depth);
         for (old, new) in &updates {
-            self.driver.update(old, new).await?;
+            if let Err(error) = self.driver.update(old, new).await {
+                return Err(self.rollback_error(error, &applied).await);
+            }
+            applied.push(AppliedChange::Updated {
+                previous: old.clone(),
+                next: new.clone(),
+            });
         }
 
         let mut starts = next
@@ -252,12 +273,43 @@ impl<D: EntryDriver> EntryTree<D> {
             .collect::<Vec<_>>();
         starts.sort_by_key(|entry| entry.depth);
         for entry in &starts {
-            self.driver.start(entry).await?;
+            if let Err(error) = self.driver.start(entry).await {
+                return Err(self.rollback_error(error, &applied).await);
+            }
+            applied.push(AppliedChange::Started(entry.clone()));
         }
 
         self.roots = roots;
         self.resolved = next;
         Ok(())
+    }
+
+    async fn rollback_error(
+        &self,
+        original: LoaderError,
+        applied: &[AppliedChange],
+    ) -> LoaderError {
+        let mut failures = Vec::new();
+        for change in applied.iter().rev() {
+            let result = match change {
+                AppliedChange::Stopped(entry) => self.driver.start(entry).await,
+                AppliedChange::Updated { previous, next } => {
+                    self.driver.update(next, previous).await
+                }
+                AppliedChange::Started(entry) => self.driver.stop(entry).await,
+            };
+            if let Err(error) = result {
+                failures.push(error.to_string());
+            }
+        }
+        if failures.is_empty() {
+            original
+        } else {
+            LoaderError::Driver(format!(
+                "{original}; reconciliation rollback failed: {}",
+                failures.join("; ")
+            ))
+        }
     }
 
     /// Inserts an Entry at the root or below a group.
@@ -599,6 +651,53 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct FaultDriver {
+        events: Mutex<Vec<String>>,
+        fail_once: Mutex<Option<String>>,
+    }
+
+    impl FaultDriver {
+        fn fail_once(&self, operation: &str) {
+            *self.fail_once.lock().unwrap() = Some(operation.to_owned());
+        }
+
+        fn record(&self, operation: String) -> Result<(), LoaderError> {
+            self.events.lock().unwrap().push(operation.clone());
+            let should_fail = self.fail_once.lock().unwrap().as_deref() == Some(&operation);
+            if should_fail {
+                self.fail_once.lock().unwrap().take();
+                Err(LoaderError::Driver(format!("injected {operation}")))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn take(&self) -> Vec<String> {
+            std::mem::take(&mut *self.events.lock().unwrap())
+        }
+    }
+
+    impl EntryDriver for FaultDriver {
+        fn start<'a>(&'a self, entry: &'a ResolvedEntry) -> LoaderFuture<'a, ()> {
+            Box::pin(async move { self.record(format!("start:{}", entry.spec.id)) })
+        }
+
+        fn update<'a>(
+            &'a self,
+            _: &'a ResolvedEntry,
+            next: &'a ResolvedEntry,
+        ) -> LoaderFuture<'a, ()> {
+            Box::pin(
+                async move { self.record(format!("update:{}:{}", next.spec.id, next.spec.config)) },
+            )
+        }
+
+        fn stop<'a>(&'a self, entry: &'a ResolvedEntry) -> LoaderFuture<'a, ()> {
+            Box::pin(async move { self.record(format!("stop:{}", entry.spec.id)) })
+        }
+    }
+
     #[tokio::test]
     async fn keyed_reconcile_only_updates_changed_entry() {
         let driver = Arc::new(Driver::default());
@@ -674,5 +773,35 @@ mod tests {
             Err(LoaderError::InvalidConfig { .. })
         ));
         assert!(driver.take().is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_reconcile_rolls_back_applied_operations_in_reverse() {
+        let driver = Arc::new(FaultDriver::default());
+        let mut tree = EntryTree::new(driver.clone());
+        let a = EntrySpec::leaf("a", "builtin:a").unwrap();
+        let b = EntrySpec::leaf("b", "builtin:b").unwrap();
+        tree.reconcile(vec![a.clone(), b.clone()]).await.unwrap();
+        driver.take();
+
+        let mut changed_a = a.clone();
+        changed_a.config = serde_json::json!(1);
+        let c = EntrySpec::leaf("c", "builtin:c").unwrap();
+        driver.fail_once("start:c");
+        assert_eq!(
+            tree.reconcile(vec![changed_a, c]).await,
+            Err(LoaderError::Driver("injected start:c".into()))
+        );
+        assert_eq!(
+            driver.take(),
+            [
+                "stop:b",
+                "update:a:1",
+                "start:c",
+                "update:a:null",
+                "start:b"
+            ]
+        );
+        assert_eq!(tree.roots(), &[a, b]);
     }
 }
