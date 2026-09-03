@@ -8,25 +8,6 @@
 > 论文落地在：./docs/2608.25512v1.txt
 
 
-**保证语义的部分在框架里，而不在插件代码里**：
-
-- 组件卸载时，Fiber 状态机先让**依赖者**离开并等它们清理完，再执行**提供者**的逆操作——递归排空整个依赖图；
-- provider 用单调递增的 Fiber id 标识，值相同但 provider 换人，消费者仍会重载；
-- 依赖环在加载前就被 SCC 诊断发现，不会死锁等待；
-- WASM 插件调用 `provide/listen/timer` 时，host binding 自动把 effect 归属到当前 Fiber，guest 丢了句柄也由 host 强制清理。
-
-动态加载、沙箱与 HMR 分别由 `cordis-wasm`、`cordis-loader` 和 `cordis-wasm::hmr` 实现；设计校准与边界说明见 [Phase 3–5 implementation notes](https://github.com/wwog/cordis_wasm/blob/master/docs/phases-3-5.md)。
-
-### 和"普通 DI 容器"的区别
-
-把 Cordis 简化成依赖注入容器会丢掉它的核心：同一个 Context 同时承担两件事——
-
-- **可逆 effect**（时间可组合性）：组件删除后，它对系统状态的贡献**精确消失**。effect 的形式是"执行动作并返回 disposer"，多个 disposer 按 LIFO 组合；异步加载中途失效时，只回滚已经完成的步骤。
-- **响应式 coeffect**（空间可组合性）：组件声明依赖，依赖满足时自动出现，提供者改变或消失时自动停用，并在新提供者稳定后重新激活。
-
-DI 容器回答"怎么拿到依赖"；Cordis 回答"**依赖和它产生的副作用，如何在运行中被精确地装上和拆下**"。前者是一次性的，后者是贯穿生命周期的。
-
-
 ## 快速开始
 
 ```bash
