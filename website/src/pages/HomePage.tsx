@@ -38,6 +38,12 @@ function ValuePoints() {
 export default function HomePage() {
   const { lang, t } = useI18n();
 
+  const docCards = [
+    { to: '/tutorial', title: t.tutorial, desc: lang === 'zh' ? '从零写一个真正的 Wasmtime 插件。' : 'Write a real Wasmtime plugin from scratch.' },
+    { to: '/api', title: t.api, desc: lang === 'zh' ? '每个 crate 的公共 API。' : 'The public API surface of every crate.' },
+    { to: '/semantics', title: t.semantics, desc: lang === 'zh' ? '可逆 effect 与九条规则。' : 'Revertible effects and the nine rules.' },
+  ];
+
   return (
     <div className="home-page">
       <div className="bg-blob blob-1" />
@@ -74,7 +80,26 @@ export default function HomePage() {
         <div className="fade-up d2">
           <ValuePoints />
         </div>
- 
+
+        {/* Three doc entry cards */}
+        <div className="fade-up d3" style={{ marginTop: 64 }}>
+          <Title level={3} style={{ textAlign: 'center', fontWeight: 600, marginBottom: 24 }}>
+            {t.exploreDocs}
+          </Title>
+          <div className="value-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', maxWidth: 860 }}>
+            {docCards.map((c) => (
+              <Link to={c.to} key={c.to} style={{ textDecoration: 'none' }}>
+                <div className="value-item">
+                  <span className="value-dot">
+                    <ApiOutlined />
+                  </span>
+                  <h4>{c.title}</h4>
+                  <p>{c.desc}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

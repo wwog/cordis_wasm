@@ -28,6 +28,17 @@ npm run build     # production build to dist/
 npm run preview   # serve the production build
 ```
 
+## Deploying to GitHub Pages
+
+The site is published to **https://wwog.github.io/cordis_wasm/** from the `master` branch via the
+`.github/workflows/deploy-website.yml` workflow, which uses the official
+`actions/deploy-pages` action.
+
+- `vite.config.ts` sets `base: '/cordis_wasm/'` so asset URLs resolve under the project sub-path.
+- Routing uses `react-router-dom`'s `HashRouter` because GitHub Pages has no SPA fallback —
+  deep links like `/cordis_wasm/#/api/context` survive a refresh, where a browser-history router would 404.
+- Pages must be enabled with **Source: GitHub Actions** in the repo settings (already done).
+
 ## Project layout
 
 | Path | Purpose |

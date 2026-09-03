@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import 'antd/dist/reset.css';
 import './index.css';
@@ -9,7 +9,7 @@ import { I18nProvider } from './I18nProvider';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <HashRouter>
       <ConfigProvider
         theme={{
           token: {
@@ -22,6 +22,6 @@ createRoot(document.getElementById('root')!).render(
           <App />
         </I18nProvider>
       </ConfigProvider>
-    </BrowserRouter>
+    </HashRouter>
   </StrictMode>,
 );

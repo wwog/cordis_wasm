@@ -9,6 +9,9 @@ const repoRoot = path.resolve(__dirname, '..');
 
 export default defineConfig({
   plugins: [react()],
+  // Deployed under https://wwog.github.io/cordis_wasm/ — build assets with the
+  // sub-path base so absolute URLs (index.html, <script>, /assets/*) resolve.
+  base: '/cordis_wasm/',
   server: {
     fs: {
       allow: [repoRoot],

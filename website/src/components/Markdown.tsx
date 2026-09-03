@@ -82,7 +82,7 @@ export default function Markdown({ markdown, section, repoFile }: MarkdownProps)
               return (
                 <a
                   {...props}
-                  href={resolved}
+                  href={`#${resolved}`}
                   onClick={(e) => {
                     e.preventDefault();
                     navigate(resolved);
