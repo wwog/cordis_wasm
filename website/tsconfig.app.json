@@ -15,12 +15,7 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"],
-      "@docs": ["../docs"]
-    }
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]
 }
