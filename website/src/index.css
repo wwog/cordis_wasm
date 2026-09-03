@@ -1,0 +1,300 @@
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(0, 0, 0, 0.88);
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Doc prose styling */
+.doc-content {
+  line-height: 1.75;
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 15px;
+}
+
+.doc-content h1 {
+  font-size: 30px;
+  font-weight: 700;
+  margin: 0 0 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  letter-spacing: -0.5px;
+}
+
+.doc-content h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 36px 0 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f0f0f0;
+  scroll-margin-top: 80px;
+}
+
+.doc-content h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 28px 0 12px;
+  scroll-margin-top: 80px;
+}
+
+.doc-content h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 22px 0 10px;
+  scroll-margin-top: 80px;
+}
+
+.doc-content p {
+  margin: 12px 0;
+}
+
+.doc-content a {
+  color: #2f6fed;
+  text-decoration: none;
+}
+
+.doc-content a:hover {
+  text-decoration: underline;
+}
+
+.doc-content code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.9em;
+  color: #c7254e;
+}
+
+.doc-content pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 8px;
+  padding: 16px 20px;
+  overflow-x: auto;
+  line-height: 1.6;
+  margin: 16px 0;
+}
+
+.doc-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: 13.5px;
+  border-radius: 0;
+}
+
+.doc-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.doc-content th,
+.doc-content td {
+  border: 1px solid #e8e8e8;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.doc-content th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.doc-content tr:nth-child(even) td {
+  background: #fcfcfc;
+}
+
+.doc-content blockquote {
+  margin: 16px 0;
+  padding: 4px 16px;
+  border-left: 4px solid #2f6fed;
+  background: #f6f9ff;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.doc-content ul,
+.doc-content ol {
+  padding-left: 26px;
+  margin: 12px 0;
+}
+
+.doc-content li {
+  margin: 6px 0;
+}
+
+.doc-content hr {
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  margin: 32px 0;
+}
+
+/* ---- Home page: animated background + staged fade-in ---- */
+.home-page {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 500px at 50% -120px, rgba(47, 111, 237, 0.10), transparent 60%),
+    linear-gradient(180deg, #f7fbff 0%, #ffffff 62%);
+}
+
+/* Subtle dot grid over the whole hero. */
+.home-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(47, 111, 237, 0.07) 1px, transparent 1px);
+  background-size: 26px 26px;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
+}
+
+/* Soft floating blobs behind the content. */
+.bg-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.blob-1 {
+  width: 420px;
+  height: 420px;
+  background: #7fb1ff;
+  top: -140px;
+  left: -90px;
+  animation: float-blob 18s ease-in-out infinite;
+}
+
+.blob-2 {
+  width: 380px;
+  height: 380px;
+  background: #a6d4ff;
+  bottom: -120px;
+  right: -70px;
+  animation: float-blob 22s ease-in-out infinite reverse;
+}
+
+.blob-3 {
+  width: 300px;
+  height: 300px;
+  background: #d3e6ff;
+  top: 38%;
+  left: 58%;
+  animation: float-blob 26s ease-in-out infinite;
+}
+
+@keyframes float-blob {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(34px, -42px) scale(1.08);
+  }
+  66% {
+    transform: translate(-28px, 30px) scale(0.94);
+  }
+}
+
+/* Staggered fade-up for hero / value strip / doc links. */
+.home-content {
+  position: relative;
+  z-index: 1;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 64px 24px 72px;
+}
+
+.fade-up {
+  opacity: 0;
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.fade-up.d2 {
+  animation-delay: 0.15s;
+}
+
+.fade-up.d3 {
+  animation-delay: 0.3s;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Value points: three compact items in a row. */
+.value-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  max-width: 860px;
+  margin: 56px auto 0;
+}
+
+@media (max-width: 768px) {
+  .value-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.value-item {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #edf3fb;
+  border-radius: 14px;
+  padding: 18px 20px;
+  backdrop-filter: blur(6px);
+  text-align: center;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.value-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px rgba(47, 111, 237, 0.12);
+}
+
+.value-item .value-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2f6fed, #6aa0ff);
+  color: #fff;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.value-item h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2733;
+}
+
+.value-item p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.6);
+  line-height: 1.6;
+}

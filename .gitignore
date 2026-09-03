@@ -5,3 +5,6 @@
 .DS_Store
 *.stderr
 !crates/cordis/tests/ui/*.stderr
+
+node_modules/
+.playwright-mcp/
