@@ -5,6 +5,7 @@
 > 本项目是 [Cordis TypeScript 实现](https://github.com/cordiverse/cordis)（`cordis@4.0.0-rc.9`）的 Rust 原生重写，语义对齐、开发体验对齐，但不承诺二进制兼容 TS 插件。理论依据是论文 *A Programming Paradigm for Spatiotemporal Composability*（arXiv:2608.25512）。
 >
 > **状态：0.1.0 发布候选。** Phase 1–6 的代码与本地门禁已落地；正式发布仍以 release commit 的跨平台、Miri 与依赖安全 CI 全绿为准。
+> 论文落地在：./docs/2608.25512v1.txt
 
 
 **保证语义的部分在框架里，而不在插件代码里**：
