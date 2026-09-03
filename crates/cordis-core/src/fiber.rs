@@ -190,6 +190,18 @@ impl FiberMachine {
         }
     }
 
+    /// Forces an active fiber through unload and a fresh load of its desired epoch.
+    pub fn reload(&mut self) -> Option<FiberTransition> {
+        if self.active.is_none()
+            && self.state == FiberState::Active
+            && matches!(self.desired, DesiredState::Ready(_))
+        {
+            Some(self.start(TransitionKind::Unload))
+        } else {
+            None
+        }
+    }
+
     fn complete_load(
         &mut self,
         epoch: DesiredEpoch,

@@ -4,7 +4,7 @@
 >
 > 本项目是 [Cordis TypeScript 实现](https://github.com/cordiverse/cordis)（`cordis@4.0.0-rc.9`）的 Rust 原生重写，语义对齐、开发体验对齐，但不承诺二进制兼容 TS 插件。理论依据是论文 *A Programming Paradigm for Spatiotemporal Composability*（arXiv:2608.25512）。
 >
-> **状态：开发中（0.1.0-dev）。** 目前内核（Fiber / effect / service / 事件）与 native 宏已落地并通过测试；Wasmtime 动态插件层正在实现。API 尚未冻结，下文示例不代表最终形态。
+> **状态：开发中（0.1.0-dev）。** Phase 1–5（内核、native 宏、Wasmtime 动态插件、Loader/Include、WASM HMR）已落地并通过测试。API 尚未冻结，下文示例不代表最终形态。
 
 
 **保证语义的部分在框架里，而不在插件代码里**：
@@ -14,7 +14,7 @@
 - 依赖环在加载前就被 SCC 诊断发现，不会死锁等待；
 - WASM 插件调用 `provide/listen/timer` 时，host binding 自动把 effect 归属到当前 Fiber，guest 丢了句柄也由 host 强制清理。
 
-至于第 1、5、6 条需求（动态加载、HMR、沙箱），对应 `cordis-wasm` / `cordis-loader` / `cordis-hmr`，正在按 [plan.md](plan.md) 的 Phase 3–5 逐步落地。
+动态加载、沙箱与 HMR 分别由 `cordis-wasm`、`cordis-loader` 和 `cordis-wasm::hmr` 实现；设计校准与边界说明见 [Phase 3–5 implementation notes](docs/phases-3-5.md)。
 
 ### 和"普通 DI 容器"的区别
 
@@ -51,6 +51,7 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 - [plan.md](plan.md)：完整架构研究稿与分阶段实现计划
 - [TODO.md](TODO.md)：执行清单与当前进度
 - [docs/wasmtime-findings.md](docs/wasmtime-findings.md)：Wasmtime 48 的实测结论（重入、取消、资源析构）
+- [docs/phases-3-5.md](docs/phases-3-5.md)：Phase 3–5 的实现边界、纠偏结论与失败语义
 
 ## 当前进度
 
@@ -59,9 +60,9 @@ native 路径零序列化：`CounterClient::from_native(Arc<T>)` 直接走宏生
 | Phase 0：Wasmtime 风险验证 | 核心 spikes 已完成 |
 | Phase 1：cordis-core（Fiber / effect / service / 事件） | ✅ 完成 |
 | Phase 2：宏与 native 组件体验 | ✅ 完成 |
-| Phase 3：Wasmtime host 与 guest SDK | 🚧 进行中 |
-| Phase 4：Loader / Include | 未开始 |
-| Phase 5：WASM HMR | 未开始 |
+| Phase 3：Wasmtime host 与 guest SDK | ✅ 已完成 |
+| Phase 4：Loader / Include | ✅ 已完成 |
+| Phase 5：WASM HMR | ✅ 已完成 |
 | Phase 6：Timer / Logger / CLI / 发布 | 未开始 |
 
 详细清单见 [TODO.md](TODO.md)。

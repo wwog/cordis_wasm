@@ -1,0 +1,16 @@
+[package]
+name = "wasm-counter-provider"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+cordis-guest = { path = "../../crates/cordis-guest" }
+
+[lints]
+workspace = true

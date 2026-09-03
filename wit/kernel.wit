@@ -16,6 +16,19 @@ interface host {
         abi-hash: list<u8>,
     }
 
+    enum event-mode {
+        emit,
+        parallel,
+        serial,
+        bail,
+        waterfall,
+    }
+
+    variant event-reply {
+        continue-value(list<u8>),
+        break-value(list<u8>),
+    }
+
     variant kernel-error {
         invalid-argument(string),
         inactive-context,
@@ -31,7 +44,7 @@ interface host {
     call-service: func(
         context: call-context,
         service: service-id,
-        operation: string,
+        method: u32,
         payload: list<u8>,
     ) -> result<list<u8>, kernel-error>;
     provide-service: func(
@@ -42,16 +55,29 @@ interface host {
         context: call-context,
         event: event-id,
         listener-id: u64,
+        mode: event-mode,
     ) -> result<registration, kernel-error>;
+    dispatch-event: func(
+        context: call-context,
+        event: event-id,
+        listener-id: u64,
+        mode: event-mode,
+        payload: list<u8>,
+        next-token: option<u64>,
+    ) -> result<event-reply, kernel-error>;
 }
 
 interface plugin {
-    use host.{call-context, event-id, kernel-error, service-id};
+    use host.{call-context, event-id, event-mode, event-reply, kernel-error, service-id};
 
     record plugin-descriptor {
         name: string,
         version: string,
         wit-version: string,
+        inject: list<service-id>,
+        provide: list<service-id>,
+        config-schema: list<u8>,
+        capabilities: list<string>,
     }
 
     descriptor: func() -> plugin-descriptor;
@@ -60,15 +86,17 @@ interface plugin {
     call-service: func(
         context: call-context,
         service: service-id,
-        operation: string,
+        method: u32,
         payload: list<u8>,
     ) -> result<list<u8>, kernel-error>;
     handle-event: func(
         context: call-context,
         event: event-id,
         listener-id: u64,
+        mode: event-mode,
         payload: list<u8>,
-    ) -> result<list<u8>, kernel-error>;
+        next-token: option<u64>,
+    ) -> result<event-reply, kernel-error>;
 }
 
 world cordis-plugin {

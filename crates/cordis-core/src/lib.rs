@@ -4,6 +4,7 @@
 //! components must use the same effect, service, event, and fiber machinery.
 
 mod context;
+mod dynamic;
 mod effect;
 mod error;
 mod event;
@@ -14,6 +15,11 @@ mod service;
 mod supervisor;
 
 pub use context::Context;
+pub use dynamic::{
+    Capability, ComponentFactory, ComponentFuture, ComponentInstance, DynamicCall,
+    DynamicComponentDescriptor, DynamicFiber, EventCall, EventReply, InstanceHost, KernelHost,
+    RegistrationRequest,
+};
 pub use effect::{
     DisposeErrors, DisposeReport, Disposer, EffectGuard, EffectMeta, EffectScope, EffectSet,
 };

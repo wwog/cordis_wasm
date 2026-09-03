@@ -22,7 +22,7 @@
 - [x] Spike：WIT resource destructor 与强制 cleanup；结论是 Store drop 不会析构 guest 遗失句柄，host EffectGuard 必须是权威清理表。
 - [x] Spike：fuel、epoch deadline、memory/resource limit。
 - [x] Spike：waterfall 同 Store onion 重入与取消；可保留 one-shot `next()`，但禁止 drop in-flight call future，超时须合作取消或销毁 Store。
-- [ ] Spike：`wasm32-wasip2` guest 构建与 componentize 流程。
+- [x] Spike：`wasm32-wasip2` guest 构建与 componentize 流程。
 
 ## Phase 1：cordis-core
 
@@ -67,32 +67,32 @@
 
 ## Phase 3：Wasmtime host 与 guest SDK
 
-- [~] `cordis-wasm` Engine/Linker/Store/ResourceTable 基础层。
-- [~] Kernel WIT host/guest bindings。
-- [ ] WASIp2 默认拒绝能力模型。
-- [ ] WASM ComponentFactory/ComponentInstance adapter。
-- [ ] 动态 service codec、ABI hash 校验和跨边界路由。
-- [ ] WASM event callback 与 waterfall 风险结论落地。
-- [ ] registration resource、Fiber 强制 cleanup、task shutdown。
-- [ ] guest SDK、guest macros、xtask 和双 WASM 示例。
-- [ ] trap/timeout/OOM/payload/capability 测试。
+- [x] `cordis-wasm` Engine/Linker/Store/ResourceTable 基础层。
+- [x] Kernel WIT host/guest bindings（工作区单一 WIT 源）。
+- [x] WASIp2 默认拒绝能力模型。
+- [x] WASM ComponentFactory/ComponentInstance adapter，并通过 `mount_dynamic` 接入 Supervisor Fiber 生命周期。
+- [x] 动态 service codec、ABI hash 校验和跨边界路由。
+- [x] WASM event callback 与 waterfall 风险结论落地。
+- [x] registration resource、Fiber 强制 cleanup、task shutdown。
+- [x] guest SDK、guest macros、xtask 和双 WASM 示例。
+- [x] trap/timeout/OOM/payload/capability 测试。
 
 ## Phase 4：Loader / Include
 
-- [ ] Entry Tree、Group、create/update/move/remove。
-- [ ] keyed reconcile 与 self-update/self-disable。
-- [ ] managed local/global realm 和精确通知。
-- [ ] JSON/YAML Include、patch、只读检测、原子写回。
-- [ ] 受限 Rhai `!expr`。
-- [ ] 移植 loader/include/isolate 行为测试。
+- [x] Entry Tree、Group、create/update/move/remove。
+- [x] keyed reconcile 与 self-update/self-disable。
+- [x] managed local/global realm 和精确通知。
+- [x] JSON/YAML Include、patch、只读检测、原子写回。
+- [x] 受限 Rhai `!expr`。
+- [x] 移植 loader/include/isolate 行为测试。
 
 ## Phase 5：WASM HMR
 
-- [ ] notify watcher、debounce 和内容 hash 去重。
-- [ ] candidate compile/manifest/WIT/capability preflight。
-- [ ] batch prepare、commit、rollback。
-- [ ] compiled Component 缓存和 reload report。
-- [ ] 半写文件、坏 component、apply trap、rollback 失败测试。
+- [x] notify watcher、debounce 和内容 hash 去重。
+- [x] candidate compile/manifest/WIT/capability preflight。
+- [x] batch prepare、commit、rollback，并通过 `FiberReloadRuntime` 执行真实 Fiber unload/load/restore。
+- [x] compiled Component 缓存和 reload report。
+- [x] 半写文件、坏 component、apply trap、rollback 失败测试。
 
 ## Phase 6：配套与发布
 

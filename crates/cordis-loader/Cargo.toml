@@ -1,6 +1,6 @@
 [package]
-name = "cordis-wasm"
-description = "Wasmtime Component Model host for Cordis"
+name = "cordis-loader"
+description = "Declarative entry tree, include, and reconcile support for Cordis"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,23 +8,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-blake3.workspace = true
 cordis-core = { path = "../cordis-core" }
-futures.workspace = true
-notify-debouncer-mini.workspace = true
-schemars.workspace = true
+jsonschema.workspace = true
+rhai.workspace = true
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tracing.workspace = true
-wasmtime.workspace = true
-wasmtime-wasi.workspace = true
 
 [dev-dependencies]
-rmp-serde.workspace = true
 tempfile.workspace = true
-wat.workspace = true
 
 [lints]
 workspace = true

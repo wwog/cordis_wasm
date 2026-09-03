@@ -73,6 +73,28 @@ pub enum CordisError {
     #[error("failed to decode event payload: {message}")]
     EventDecodeFailed { message: String },
 
+    #[error("dynamic payload is {actual} bytes, limit is {limit} bytes")]
+    PayloadLimitExceeded { actual: usize, limit: usize },
+
+    #[error("kernel ABI mismatch: expected {expected}, got {actual}")]
+    KernelAbiMismatch { expected: String, actual: String },
+
+    #[error("component capability `{capability}` is denied")]
+    CapabilityDenied { capability: String },
+
+    #[error("component `{component}` configuration is invalid at {path}: {message}")]
+    InvalidComponentConfig {
+        component: String,
+        path: String,
+        message: String,
+    },
+
+    #[error("reentrant call into component fiber {fiber} is not allowed")]
+    ReentrantCall { fiber: FiberId },
+
+    #[error("component `{component}` failed: {message}")]
+    ComponentFailed { component: String, message: String },
+
     #[error("runtime supervisor is closed")]
     RuntimeClosed,
 

@@ -1,12 +1,23 @@
 //! Wasmtime Component Model integration for Cordis.
 
+mod capability;
+mod hmr;
+mod runtime;
+
+pub use capability::{WasiCapabilities, WasiPreopen};
+pub use hmr::{
+    ArtifactCache, ArtifactHash, CacheMetrics, CompiledArtifact, EntryReload, FiberReloadRuntime,
+    HmrError, HmrFuture, HmrManager, HmrWatcher, ReloadReport, ReloadRuntime, ReloadStatus,
+};
+pub use runtime::{ArtifactPolicy, GuestTaskGroup, WasmComponentFactory};
+
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder};
 
 /// Generated host and guest types for the versioned Cordis kernel world.
 pub mod bindings {
     wasmtime::component::bindgen!({
-        path: "wit",
+        path: "../../wit",
         world: "cordis-plugin",
         imports: { default: async | trappable },
         exports: { default: async },
@@ -30,6 +41,7 @@ pub struct WasmLimits {
     pub max_tables: usize,
     pub max_memories: usize,
     pub max_registrations: usize,
+    pub max_payload_bytes: usize,
 }
 
 impl Default for WasmLimits {
@@ -43,6 +55,7 @@ impl Default for WasmLimits {
             max_tables: 32,
             max_memories: 32,
             max_registrations: 10_000,
+            max_payload_bytes: 1024 * 1024,
         }
     }
 }
@@ -188,6 +201,18 @@ pub enum WasmHostError {
 
     #[error("guest registration count underflow")]
     RegistrationCountUnderflow,
+
+    #[error("invalid component descriptor: {message}")]
+    Descriptor { message: String },
+
+    #[error("kernel ABI mismatch: expected {expected}, got {actual}")]
+    KernelAbiMismatch { expected: String, actual: String },
+
+    #[error("component capability `{capability}` is denied")]
+    CapabilityDenied { capability: String },
+
+    #[error("invalid WASI capability: {message}")]
+    Capability { message: String },
 }
 
 #[cfg(test)]

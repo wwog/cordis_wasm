@@ -139,6 +139,10 @@ enum Command {
         fiber: FiberId,
         reply: oneshot::Sender<Result<Vec<FiberTransition>, CordisError>>,
     },
+    ReloadFiber {
+        fiber: FiberId,
+        reply: oneshot::Sender<Result<Vec<FiberTransition>, CordisError>>,
+    },
     Snapshot {
         reply: oneshot::Sender<RuntimeSnapshot>,
     },
@@ -396,6 +400,24 @@ impl RuntimeHandle {
         result
     }
 
+    /// Forces an active fiber through unload and a fresh load of its desired epoch.
+    ///
+    /// Unlike [`Self::restart_fiber`], this does not retry a failed fiber.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown fiber or a closed runtime.
+    pub async fn reload_fiber(&self, fiber: FiberId) -> Result<Vec<FiberTransition>, CordisError> {
+        let (reply, response) = oneshot::channel();
+        self.send(Command::ReloadFiber { fiber, reply }).await?;
+        let result = response.await.map_err(|_| CordisError::RuntimeClosed)?;
+        self.changes.notify_waiters();
+        if let Ok(transitions) = &result {
+            self.dispatch(transitions.clone());
+        }
+        result
+    }
+
     /// Returns a stable snapshot produced by the supervisor.
     ///
     /// # Errors
@@ -446,6 +468,22 @@ impl RuntimeHandle {
                 .state;
             if state == FiberState::Disposed {
                 return Ok(());
+            }
+            changed.await;
+        }
+    }
+
+    pub(crate) async fn await_settled(&self, fiber: FiberId) -> Result<FiberSnapshot, CordisError> {
+        loop {
+            let changed = self.changes.notified();
+            let snapshot = self.snapshot().await?;
+            let fiber = snapshot
+                .fibers
+                .into_iter()
+                .find(|candidate| candidate.id == fiber)
+                .ok_or(CordisError::UnknownFiber { fiber })?;
+            if fiber.active_transition.is_none() {
+                return Ok(fiber);
             }
             changed.await;
         }
@@ -557,6 +595,10 @@ async fn run_supervisor(mut commands: mpsc::Receiver<Command>) {
             }
             Command::RestartFiber { fiber, reply } => {
                 let result = restart_fiber(&mut state, fiber);
+                let _ = reply.send(result);
+            }
+            Command::ReloadFiber { fiber, reply } => {
+                let result = reload_fiber(&mut state, fiber);
                 let _ = reply.send(result);
             }
             Command::Snapshot { reply } => {
@@ -798,6 +840,19 @@ fn restart_fiber(
         .ok_or(CordisError::UnknownFiber { fiber })?
         .machine
         .restart();
+    Ok(schedule_transitions(state, transition))
+}
+
+fn reload_fiber(
+    state: &mut SupervisorState,
+    fiber: FiberId,
+) -> Result<Vec<FiberTransition>, CordisError> {
+    let transition = state
+        .fibers
+        .get_mut(&fiber)
+        .ok_or(CordisError::UnknownFiber { fiber })?
+        .machine
+        .reload();
     Ok(schedule_transitions(state, transition))
 }
 

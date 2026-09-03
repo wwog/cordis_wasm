@@ -368,6 +368,10 @@ impl EffectSet {
         Self { root, scope }
     }
 
+    pub fn id(&self) -> EffectId {
+        self.root.id()
+    }
+
     /// Creates a top-level effect owned by this set.
     ///
     /// # Errors
