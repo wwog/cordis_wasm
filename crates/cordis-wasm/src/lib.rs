@@ -16,6 +16,7 @@ pub use loader::{
 };
 pub use runtime::{ArtifactPolicy, GuestTaskGroup, WasmComponentFactory};
 
+use std::path::PathBuf;
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder};
 
@@ -33,6 +34,7 @@ pub mod bindings {
 #[derive(Clone, Debug)]
 pub struct WasmEngine {
     engine: Engine,
+    cache_dir: Option<PathBuf>,
 }
 
 /// Per-plugin resource and execution budgets.
@@ -131,6 +133,7 @@ impl WasmEngine {
         config.epoch_interruption(true);
         Ok(Self {
             engine: Engine::new(&config)?,
+            cache_dir: default_aot_cache_dir(),
         })
     }
 
@@ -145,6 +148,32 @@ impl WasmEngine {
     /// Returns [`WasmHostError::Engine`] for invalid bytes or a compilation failure.
     pub fn compile(&self, bytes: impl AsRef<[u8]>) -> Result<Component, WasmHostError> {
         Component::new(&self.engine, bytes).map_err(WasmHostError::Engine)
+    }
+
+    /// Compiles `bytes`, or loads it from the on-disk AOT cache keyed by `hash`.
+    ///
+    /// On a cache hit this skips Cranelift entirely and deserializes the
+    /// precompiled artifact (milliseconds instead of seconds in debug builds).
+    /// On a miss it compiles, persists the artifact, and loads it. A stale or
+    /// corrupt cache entry is discarded and recompiled. When no cache directory
+    /// is configured this behaves exactly like [`Self::compile`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WasmHostError::Engine`] for invalid bytes or a compilation
+    /// failure that is not recoverable from cache.
+    pub fn compile_cached(
+        &self,
+        bytes: impl AsRef<[u8]>,
+        hash: ArtifactHash,
+    ) -> Result<Component, WasmHostError> {
+        cordis_aot::compile_or_load(
+            &self.engine,
+            bytes.as_ref(),
+            hash.as_bytes(),
+            self.cache_dir.as_deref(),
+        )
+        .map_err(WasmHostError::Engine)
     }
 
     /// Creates a limited Store without adding any ambient WASI capabilities.
@@ -630,4 +659,28 @@ mod tests {
         );
         Ok(())
     }
+}
+
+/// Resolves the AOT cache directory, or `None` to disable caching.
+///
+/// The first set value wins:
+/// 1. `CORDIS_CACHE_DIR` environment variable.
+/// 2. The XDG cache directory: `$XDG_CACHE_HOME/cordis/aot`.
+/// 3. macOS: `~/Library/Caches/cordis/aot`; otherwise `~/.cache/cordis/aot`.
+///
+/// If no home directory can be determined, caching is disabled (`None`).
+fn default_aot_cache_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("CORDIS_CACHE_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+        return Some(PathBuf::from(xdg).join("cordis").join("aot"));
+    }
+    let home = std::env::var_os("HOME")?;
+    let base = if cfg!(target_os = "macos") {
+        PathBuf::from(&home).join("Library").join("Caches")
+    } else {
+        PathBuf::from(&home).join(".cache")
+    };
+    Some(base.join("cordis").join("aot"))
 }

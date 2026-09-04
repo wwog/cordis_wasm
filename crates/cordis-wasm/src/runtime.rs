@@ -1,6 +1,8 @@
 use crate::bindings::cordis::kernel::host as wit;
 use crate::bindings::exports::cordis::kernel::plugin as guest;
-use crate::{StoreState, WasiCapabilities, WasmEngine, WasmHostError, WasmLimits, bindings};
+use crate::{
+    ArtifactHash, StoreState, WasiCapabilities, WasmEngine, WasmHostError, WasmLimits, bindings,
+};
 use cordis_core::{
     Capability, ComponentFactory, ComponentFuture, ComponentInstance, CordisError, DynamicCall,
     DynamicComponentDescriptor, EventCall, EventMode, EventReply, InjectSpec, InstanceHost,
@@ -57,7 +59,9 @@ impl WasmComponentFactory {
         limits: WasmLimits,
         policy: ArtifactPolicy,
     ) -> Result<Self, WasmHostError> {
-        let component = Arc::new(engine.compile(bytes)?);
+        let bytes = bytes.as_ref();
+        let hash = ArtifactHash::from_bytes(bytes, &policy, &limits);
+        let component = Arc::new(engine.compile_cached(bytes, hash)?);
         let descriptor = inspect_descriptor(&engine, &component, &limits, &policy.wasi).await?;
         validate_descriptor(&descriptor, &policy)?;
         validate_wasi_imports(engine.engine(), &component, &descriptor, &policy)?;

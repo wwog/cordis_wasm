@@ -10,6 +10,7 @@ readme.workspace = true
 
 [dependencies]
 blake3.workspace = true
+cordis-aot = { path = "../cordis-aot", version = "0.1.0" }
 cordis-core = { path = "../cordis-core", version = "0.1.0" }
 cordis-loader = { path = "../cordis-loader", version = "0.1.0" }
 cordis-logger = { path = "../cordis-logger", version = "0.1.0" }

@@ -480,12 +480,9 @@ impl WasmEntryDriver {
     /// [`LogLevel::Debug`], otherwise a no-op. Internal lifecycle traces are
     /// gated behind `set_level("cordis", LogLevel::Debug)` by the host.
     fn dbg_log(&self, message: impl AsRef<str>) {
-        self.kernel.logger().log(
-            LogLevel::Debug,
-            "cordis.loader",
-            message.as_ref(),
-            None,
-        );
+        self.kernel
+            .logger()
+            .log(LogLevel::Debug, "cordis.loader", message.as_ref(), None);
     }
 
     async fn stop_entry(&self, id: &EntryId) -> Result<(), LoaderError> {

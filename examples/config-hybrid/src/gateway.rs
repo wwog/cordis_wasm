@@ -88,10 +88,20 @@ impl ComponentInstance for HttpGatewayInstance {
             let interval = Duration::from_millis(interval_ms);
 
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                // The wasm plugin compiles on first load and registers its
+                // listeners after activation. In a cold debug build that can
+                // take seconds, so the first request cycles race it. We retry
+                // silently while the listener is missing rather than log a
+                // warning for every dropped cycle; the plugin settles and the
+                // periodic loop starts emitting normally.
+                tokio::time::sleep(Duration::from_millis(200)).await;
                 loop {
-                    if let Err(error) = simulate_request(&host).await {
-                        host.log("warn", &format!("request cycle dropped: {error}"));
+                    match simulate_request(&host).await {
+                        Ok(()) => {}
+                        Err(error) if listener_not_registered(&error) => {}
+                        Err(error) => {
+                            host.log("warn", &format!("request cycle dropped: {error}"));
+                        }
                     }
                     tokio::time::sleep(interval).await;
                 }
@@ -182,6 +192,13 @@ async fn simulate_request(host: &InstanceHost) -> Result<(), cordis_core::Cordis
     })
     .await?;
     Ok(())
+}
+
+/// True when a dispatch failed because the target listener has not been
+/// registered yet — the cold-start race between a builtin emitting and a wasm
+/// plugin still compiling. Such failures are transient and retried silently.
+fn listener_not_registered(error: &cordis_core::CordisError) -> bool {
+    error.to_string().contains("is not registered")
 }
 
 fn http_service() -> ServiceId {

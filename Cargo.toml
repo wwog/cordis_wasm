@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/cordis",
+    "crates/cordis-aot",
     "crates/cordis-core",
     "crates/cordis-guest",
     "crates/cordis-cli",
@@ -46,7 +47,7 @@ thiserror = "2"
 tokio = { version = "1.53.1", default-features = false }
 tracing = "0.1"
 trybuild = "1"
-wasmtime = { version = "48.0.1", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
+wasmtime = { version = "48.0.1", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std", "wat"] }
 wasmtime-wasi = { version = "48.0.1", default-features = false, features = ["p2"] }
 wat = "1.258.0"
 wit-bindgen = "0.61.1"

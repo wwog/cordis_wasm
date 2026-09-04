@@ -84,13 +84,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .filter(|fiber| cordis_core::FiberState::Active == fiber.state)
         .count();
-    eprintln!("{} [host] {active} fibers active; running for 3 request cycles…", ts());
+    eprintln!(
+        "{} [host] {active} fibers active; running for 3 request cycles…",
+        ts()
+    );
 
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     let snapshot = app.snapshot().await?;
     for fiber in &snapshot.fibers {
-        eprintln!("{} [host] fiber {:?} state={:?}", ts(), fiber.id, fiber.state);
+        eprintln!(
+            "{} [host] fiber {:?} state={:?}",
+            ts(),
+            fiber.id,
+            fiber.state
+        );
     }
 
     app.shutdown().await?;

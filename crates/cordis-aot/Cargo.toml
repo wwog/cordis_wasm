@@ -1,0 +1,26 @@
+[package]
+name = "cordis-aot"
+description = "Ahead-of-time component compilation cache for Cordis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+wasmtime = { workspace = true }
+
+# This crate deliberately does NOT inherit `workspace.lints`: it wraps the
+# `unsafe` Wasmtime deserialize API behind a safe, validated interface, which
+# would be rejected by the workspace's `unsafe_code = "forbid"` policy.
+[lints.rust]
+unsafe_code = "allow"
+# Keep the other workspace lint defaults explicit so behavior stays consistent.
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"

@@ -332,6 +332,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cordis-aot"
+version = "0.1.0"
+dependencies = [
+ "wasmtime",
+]
+
+[[package]]
 name = "cordis-cli"
 version = "0.1.0"
 dependencies = [
@@ -416,6 +423,7 @@ name = "cordis-wasm"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "cordis-aot",
  "cordis-core",
  "cordis-loader",
  "cordis-logger",
@@ -2623,6 +2631,7 @@ dependencies = [
  "wasmtime-internal-jit-icache-coherence",
  "wasmtime-internal-unwinder",
  "wasmtime-internal-versioned-export-macros",
+ "wat",
  "windows-sys 0.61.2",
 ]
 
