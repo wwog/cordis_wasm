@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "id": "gateway",
+      "component": "builtin:http-gateway",
+      "config": { "interval_ms": 1000 }
+    },
+    {
+      "id": "log-plugin",
+      "component": "file:../../target/wasm32-wasip2/debug/wasm_log_plugin.wasm",
+      "config": {}
+    }
+  ]
+}

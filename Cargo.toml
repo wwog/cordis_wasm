@@ -13,6 +13,7 @@ members = [
     "examples/wasm-counter-provider",
     "examples/wasm-log-plugin",
     "examples/hybrid-http-gateway",
+    "examples/config-hybrid",
     "xtask",
 ]
 resolver = "3"
@@ -28,6 +29,7 @@ readme = "README.md"
 [workspace.dependencies]
 futures = "0.3.31"
 blake3 = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jsonschema = { version = "0.52", default-features = false }
 notify-debouncer-mini = "0.7"
 proc-macro2 = "1"

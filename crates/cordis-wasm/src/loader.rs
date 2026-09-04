@@ -344,6 +344,8 @@ impl WasmEntryDriver {
     }
 
     async fn start_entry(&self, entry: &ResolvedEntry) -> Result<(), LoaderError> {
+        let started = std::time::Instant::now();
+        self.dbg_log(format!("mounting entry `{}`", entry.spec.id));
         let (factory, hmr_tracked) = self.resolve_factory(entry).await?;
         if let Err(error) = validate_config(entry, factory.as_ref()) {
             self.untrack_if(entry.spec.id.as_str(), hmr_tracked).await;
@@ -419,6 +421,12 @@ impl WasmEntryDriver {
             let _ = mounted.retire().await;
             return Err(driver_error(error));
         }
+        self.dbg_log(format!(
+            "mounted entry `{}` ({}ms, fiber state {:?})",
+            entry.spec.id,
+            started.elapsed().as_millis(),
+            state,
+        ));
         Ok(())
     }
 
@@ -437,6 +445,7 @@ impl WasmEntryDriver {
             Some(ComponentRef::File(path)) => {
                 let path = self.base_dir.join(path);
                 let bytes = std::fs::read(&path).map_err(driver_error)?;
+                let compiled_at = std::time::Instant::now();
                 let artifact = self
                     .hmr
                     .lock()
@@ -444,6 +453,11 @@ impl WasmEntryDriver {
                     .track(entry.spec.id.to_string(), path, &bytes)
                     .await
                     .map_err(driver_error)?;
+                self.dbg_log(format!(
+                    "compiled artifact `{}` in {}ms",
+                    entry.spec.id,
+                    compiled_at.elapsed().as_millis(),
+                ));
                 let factory = artifact.factory_arc().ok_or_else(|| {
                     LoaderError::Driver("compiled artifact has no factory".into())
                 })?;
@@ -460,6 +474,18 @@ impl WasmEntryDriver {
         if hmr_tracked {
             self.hmr.lock().await.untrack(entry);
         }
+    }
+
+    /// Emits a `cordis.loader` debug log when the logger is configured below
+    /// [`LogLevel::Debug`], otherwise a no-op. Internal lifecycle traces are
+    /// gated behind `set_level("cordis", LogLevel::Debug)` by the host.
+    fn dbg_log(&self, message: impl AsRef<str>) {
+        self.kernel.logger().log(
+            LogLevel::Debug,
+            "cordis.loader",
+            message.as_ref(),
+            None,
+        );
     }
 
     async fn stop_entry(&self, id: &EntryId) -> Result<(), LoaderError> {

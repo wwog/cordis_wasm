@@ -1,9 +1,15 @@
 //! Native HTTP gateway: a static component that provides the HTTP "basis" and
 //! emits request lifecycle events for dynamic plugins to observe.
 //!
-//! This demonstrates the static/dynamic split: the gateway owns the real HTTP
-//! engine (here simulated), while the WebAssembly log plugin only subscribes to
-//! its events and records structured fields.
+//! This is the native half of the static/dynamic split. It is referenced from
+//! `cordis.json` as `builtin:http-gateway` — a process-local factory registered
+//! by the host before the config file is loaded. The gateway owns the simulated
+//! HTTP engine and emits `http.request.started` / `http.request.finished` events
+//! for the WebAssembly log plugin (`file:`) to observe via `handle_event`.
+//!
+//! Unlike the `hybrid-http-gateway` example (which hard-codes its topology and
+//! the request interval in Rust), the interval is read from `config.interval_ms`
+//! in `cordis.json`, so this component is genuinely config-driven.
 
 use cordis_core::{
     ComponentFactory, ComponentFuture, ComponentInstance, DynamicCall, DynamicComponentDescriptor,
@@ -14,14 +20,17 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-// Wire protocol shared with the wasm-log-plugin guest.
+// Wire protocol shared with the wasm-log-plugin guest. Changing any of these on
+// one side must be mirrored on the other; the ABI hash pins the payload type.
 const REQUEST_STARTED_ABI: [u8; 32] = [0xA1; 32];
 const REQUEST_FINISHED_ABI: [u8; 32] = [0xB2; 32];
 const STARTED_LISTENER: u64 = 1;
 const FINISHED_LISTENER: u64 = 2;
 const HTTP_ABI: [u8; 32] = [0x01; 32];
 const HANDLE_METHOD: u32 = 1;
-const REQUEST_INTERVAL: Duration = Duration::from_millis(1000);
+
+/// Default request interval when `config.interval_ms` is absent.
+const DEFAULT_INTERVAL_MS: u64 = 1000;
 
 #[derive(Clone)]
 pub(crate) struct HttpGatewayFactory;
@@ -67,23 +76,24 @@ struct HttpGatewayInstance {
 }
 
 impl ComponentInstance for HttpGatewayInstance {
-    fn activate(&mut self, _config: Value) -> ComponentFuture<'_, ()> {
+    fn activate(&mut self, config: Value) -> ComponentFuture<'_, ()> {
         let host = self.host.clone();
         Box::pin(async move {
-            // Spawn the self-driving request loop. This is what makes the example
-            // self-contained: the gateway periodically produces a request and
-            // emits started/finished events for listeners to observe.
-            //
-            // The initial delay gives the supervisor time to activate the
-            // WebAssembly log plugin and register its listeners before the first
-            // event is dispatched; without it the first cycle would fail lookup.
+            // config is the JSON object from cordis.json. Read the interval here so
+            // the same factory can be run with different cadences per entry.
+            let interval_ms = config
+                .get("interval_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or(DEFAULT_INTERVAL_MS);
+            let interval = Duration::from_millis(interval_ms);
+
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 loop {
                     if let Err(error) = simulate_request(&host).await {
                         host.log("warn", &format!("request cycle dropped: {error}"));
                     }
-                    tokio::time::sleep(REQUEST_INTERVAL).await;
+                    tokio::time::sleep(interval).await;
                 }
             });
             Ok(())

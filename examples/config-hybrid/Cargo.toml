@@ -1,0 +1,23 @@
+[package]
+name = "config-hybrid"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "config-hybrid"
+path = "src/main.rs"
+
+[dependencies]
+cordis-core = { path = "../../crates/cordis-core", version = "0.1.0" }
+cordis-loader = { path = "../../crates/cordis-loader", version = "0.1.0" }
+cordis-logger = { path = "../../crates/cordis-logger", version = "0.1.0" }
+cordis-wasm = { path = "../../crates/cordis-wasm", version = "0.1.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

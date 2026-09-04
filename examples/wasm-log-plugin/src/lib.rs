@@ -63,10 +63,18 @@ impl Guest for LogPlugin {
     }
 
     fn activate(context: CallContext, _config: Vec<u8>) -> Result<(), KernelError> {
-        let started =
-            host::register_listener(context, &started_event(), STARTED_LISTENER, EventMode::Serial)?;
-        let finished =
-            host::register_listener(context, &finished_event(), FINISHED_LISTENER, EventMode::Serial)?;
+        let started = host::register_listener(
+            context,
+            &started_event(),
+            STARTED_LISTENER,
+            EventMode::Serial,
+        )?;
+        let finished = host::register_listener(
+            context,
+            &finished_event(),
+            FINISHED_LISTENER,
+            EventMode::Serial,
+        )?;
         STARTED.with(|slot| *slot.borrow_mut() = Some(started));
         FINISHED.with(|slot| *slot.borrow_mut() = Some(finished));
         Ok(())

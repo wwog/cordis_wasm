@@ -8,9 +8,7 @@
 
 use cordis_loader::EntrySpec;
 use cordis_logger::ConsoleExporter;
-use cordis_wasm::{
-    ArtifactPolicy, BuiltinRegistry, WasmApplication, WasmLimits,
-};
+use cordis_wasm::{ArtifactPolicy, BuiltinRegistry, WasmApplication, WasmLimits};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,9 +28,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let plugin_path = base_dir
         .join("../../target/wasm32-wasip2/debug/wasm_log_plugin.wasm")
         .canonicalize()
-        .map_err(|error| format!(
-            "log plugin not built; run `cargo run -p xtask -- build-guests` first: {error}"
-        ))?;
+        .map_err(|error| {
+            format!("log plugin not built; run `cargo run -p xtask -- build-guests` first: {error}")
+        })?;
 
     let mut gateway = EntrySpec::leaf("http-gateway", "builtin:http-gateway")?;
     gateway.config = serde_json::json!({});
@@ -71,10 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let snapshot = app.snapshot().await?;
     for fiber in &snapshot.fibers {
-        eprintln!(
-            "[host] fiber {:?} state={:?}",
-            fiber.id, fiber.state
-        );
+        eprintln!("[host] fiber {:?} state={:?}", fiber.id, fiber.state);
     }
 
     app.shutdown().await?;

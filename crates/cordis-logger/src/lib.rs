@@ -183,8 +183,9 @@ impl LogExporter for ConsoleExporter {
         let fiber = record
             .fiber
             .map_or_else(|| "-".to_owned(), |fiber| fiber.to_string());
+        let now = chrono::Local::now().format("%Y/%m/%d %H:%M:%S%.3f");
         eprintln!(
-            "[{:?}] [{}] [fiber={fiber}] {}",
+            "[{now}] [{:?}] [{}] [fiber={fiber}] {}",
             record.level, record.target, record.message
         );
     }

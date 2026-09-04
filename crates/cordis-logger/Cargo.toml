@@ -10,6 +10,7 @@ readme.workspace = true
 
 [dependencies]
 cordis-core = { path = "../cordis-core", version = "0.1.0" }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
