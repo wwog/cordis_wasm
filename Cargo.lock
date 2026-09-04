@@ -405,7 +405,7 @@ dependencies = [
  "blake3",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.4",
 ]
 
 [[package]]
